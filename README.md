@@ -3,10 +3,7 @@
 > *The payments and reputation fabric for a billion AI agents.*
 
 ## Demo video
-[YouTube link — add after recording]
-
-## Live demo
-[Render URL — add after deploy]
+[https://youtu.be/oUCDaHR83GM]
 
 ---
 
@@ -37,41 +34,7 @@ AgentPay uses **specialization**, not hedging. Solana hosts identity and reputat
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        AVALANCHE FUJI                           │
-│  ERC-8004 IdentityRegistry  ·  ERC-8004 ReputationRegistry     │
-│  x402 USDC payments (EIP-3009 gasless)  ·  SP1 ZK Verifier     │
-└────────────────────────┬────────────────────────────────────────┘
-                         │ identity + settlement
-┌────────────────────────▼────────────────────────────────────────┐
-│                    AGENT A (Python, LangChain)                  │
-│  Tools: discover · negotiate · escrow · pay_evm · pay_sol      │
-│         write_reputation_evm · write_reputation_solana          │
-│  Coordinator: LangGraph DAG for multi-service tasks             │
-└────────────────────────┬────────────────────────────────────────┘
-                         │ hires + pays
-┌────────────────────────▼────────────────────────────────────────┐
-│                    AGENT B (FastAPI, Python)                    │
-│  /trust-report · /code-review · /summarize · /sql-generator    │
-│  Port 8001: Avalanche Fuji (fastapi-x402)                       │
-│  Port 8002: Solana devnet (x402[svm])                           │
-└────────────────────────┬────────────────────────────────────────┘
-                         │ mints reputation
-┌────────────────────────▼────────────────────────────────────────┐
-│                        SOLANA DEVNET                            │
-│  Anchor: agent-registry · escrow · staking (slash/burn)        │
-│  Light Protocol: ZK-compressed reputation tokens               │
-│  ZK proof: SP1 cross-chain reputation portability              │
-└─────────────────────────────────────────────────────────────────┘
-                         │ real-time events
-┌────────────────────────▼────────────────────────────────────────┐
-│           DASHBOARD (Next.js, D3, WebSocket port 3001)          │
-│  AgentGraph · JobFeed · PaymentPulse · AgentProfile             │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
+![AgentPay Architecture](./dashboard/public/architecture.svg)
 
 ## Tech stack
 

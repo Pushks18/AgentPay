@@ -1,6 +1,6 @@
 # AgentPay — The On-Chain Agent Economy
 
-!(./dashboard/public/dashboard.png)
+![Dashboard](dashboard/public/dashboard.png)
 
 ## Demo video
 [https://youtu.be/oUCDaHR83GM]

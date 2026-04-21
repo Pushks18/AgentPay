@@ -1,6 +1,6 @@
 # AgentPay — The On-Chain Agent Economy
 
-> *The payments and reputation fabric for a billion AI agents.*
+!(./dashboard/public/dashboard.png)
 
 ## Demo video
 [https://youtu.be/oUCDaHR83GM]
@@ -34,7 +34,7 @@ AgentPay uses **specialization**, not hedging. Solana hosts identity and reputat
 
 ## Architecture
 
-![AgentPay Architecture](./dashboard/public/architecture.svg)
+![AgentPay Architecture](dashboard/public/architecture.png)
 
 ## Tech stack
 

@@ -1,0 +1,374 @@
+"""
+Agent B — Seller microservice.
+
+Run on Avalanche Fuji (port 8001):
+    uvicorn agent_b.main:app_fuji --port 8001
+
+Run on Solana devnet (port 8002):
+    uvicorn agent_b.main:app_sol --port 8002
+"""
+import asyncio
+import json
+import os
+import sqlite3
+import subprocess
+import time
+from contextlib import asynccontextmanager
+from typing import Optional
+
+import websockets
+from dotenv import load_dotenv
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from x402 import x402ResourceServer
+from x402.http import FacilitatorConfig, HTTPFacilitatorClient
+from x402.http.middleware.fastapi import PaymentMiddlewareASGI
+from x402.http.types import PaymentOption, RouteConfig
+from x402.mechanisms.evm.exact.register import register_exact_evm_server
+from x402.mechanisms.svm.exact.register import register_exact_svm_server
+
+load_dotenv()
+
+from agent_b.services import (
+    code_explain,
+    code_review,
+    market_analysis,
+    regex_generator,
+    sentiment_analysis,
+    smart_contract_audit,
+    sql_generator,
+    summarizer,
+    translate,
+    trust_report,
+)
+
+# ---------------------------------------------------------------------------
+# SQLite stats DB
+# ---------------------------------------------------------------------------
+
+DB_PATH = os.path.join(os.path.dirname(__file__), "stats.db")
+
+
+def init_db():
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            service TEXT,
+            chain TEXT,
+            amount_usdc REAL,
+            ts INTEGER
+        )"""
+    )
+    con.commit()
+    con.close()
+
+
+def record_job(service: str, chain: str, amount: float):
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        "INSERT INTO jobs (service, chain, amount_usdc, ts) VALUES (?,?,?,?)",
+        (service, chain, amount, int(time.time())),
+    )
+    con.commit()
+    con.close()
+
+
+def get_stats() -> dict:
+    con = sqlite3.connect(DB_PATH)
+    row = con.execute(
+        "SELECT COUNT(*), COALESCE(SUM(amount_usdc),0) FROM jobs"
+    ).fetchone()
+    con.close()
+    return {"total_jobs": row[0], "total_usdc": row[1]}
+
+
+# ---------------------------------------------------------------------------
+# WebSocket broadcast helper
+# ---------------------------------------------------------------------------
+
+WS_URL = os.environ.get("NEXT_PUBLIC_WS_URL", "ws://localhost:3001")
+
+
+async def broadcast_event(event: dict):
+    try:
+        async with websockets.connect(WS_URL, open_timeout=2) as ws:
+            await ws.send(json.dumps(event))
+    except Exception:
+        pass  # dashboard offline — don't block payment
+
+
+def fire_event(event: dict):
+    try:
+        asyncio.get_event_loop().run_until_complete(broadcast_event(event))
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Post-payment hook: ZK reputation mint + WS broadcast
+# ---------------------------------------------------------------------------
+
+AGENT_B_SOL_ADDRESS = os.environ.get("AGENT_B_SOLANA_ADDRESS", "")
+ZK_SCRIPT = os.path.join(os.path.dirname(__file__), "zk_reputation.mjs")
+
+
+def post_payment_hook(service: str, chain: str, amount: float):
+    record_job(service, chain, amount)
+    # Mint 1 ZK-compressed reputation token (non-blocking)
+    if AGENT_B_SOL_ADDRESS:
+        subprocess.Popen(
+            ["node", ZK_SCRIPT, AGENT_B_SOL_ADDRESS, "1"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    fire_event(
+        {
+            "event": "job_completed",
+            "service": service,
+            "chain": chain,
+            "amount": amount,
+            "timestamp": int(time.time()),
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# App factory (called twice: once for Fuji, once for Solana)
+# ---------------------------------------------------------------------------
+
+UPTIME_START = time.time()
+
+
+def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        init_db()
+        yield
+
+    app = FastAPI(
+        title=f"AgentPay — Agent B ({chain})",
+        lifespan=lifespan,
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # ----------------------------------------------------------------
+    # x402 middleware — configured once per app
+    # ----------------------------------------------------------------
+    facilitator_url = os.environ.get("X402_FACILITATOR", "https://x402.org/facilitator")
+    facilitator = HTTPFacilitatorClient(FacilitatorConfig(url=facilitator_url))
+    server = x402ResourceServer(facilitator)
+
+    if chain == "avalanche-fuji":
+        # x402 public facilitator currently supports Base Sepolia for EVM exact.
+        network = "eip155:84532"
+        register_exact_evm_server(server, networks=network)
+    else:
+        # x402 public facilitator uses the canonical Solana devnet CAIP-2 ID.
+        network = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"
+        register_exact_svm_server(server, networks=network)
+
+    protected_routes = {
+        f"POST {path_}": RouteConfig(
+            accepts=PaymentOption(
+                scheme="exact",
+                pay_to=pay_to,
+                price=f"${price_}",
+                network=network,
+            )
+        )
+        for path_, price_ in price_map.items()
+    }
+
+    app.add_middleware(
+        PaymentMiddlewareASGI,
+        routes=protected_routes,
+        server=server,
+    )
+
+    # ----------------------------------------------------------------
+    # Endpoints
+    # ----------------------------------------------------------------
+
+    @app.get("/healthz")
+    def healthz():
+        return {
+            "status": "ok",
+            "uptime": int(time.time() - UPTIME_START),
+            "chain": chain,
+            **get_stats(),
+        }
+
+    @app.get("/manifest")
+    def manifest():
+        return {
+            "name": f"agentpay-seller-{chain}",
+            "chain": chain,
+            "pay_to": pay_to,
+            "services": [
+                {"path": "/trust-report",           "price_usdc": price_map.get("/trust-report", 0.01),          "service": "trust_report"},
+                {"path": "/code-review",            "price_usdc": price_map.get("/code-review", 0.05),           "service": "code_review"},
+                {"path": "/summarize",              "price_usdc": price_map.get("/summarize", 0.02),             "service": "summarize"},
+                {"path": "/sql-generator",          "price_usdc": price_map.get("/sql-generator", 0.03),         "service": "sql_generator"},
+                {"path": "/translate",              "price_usdc": price_map.get("/translate", 0.03),             "service": "translate"},
+                {"path": "/code-explain",           "price_usdc": price_map.get("/code-explain", 0.02),          "service": "code_explain"},
+                {"path": "/regex-generator",        "price_usdc": price_map.get("/regex-generator", 0.03),       "service": "regex_generator"},
+                {"path": "/sentiment-analysis",     "price_usdc": price_map.get("/sentiment-analysis", 0.01),    "service": "sentiment_analysis"},
+                {"path": "/smart-contract-audit",   "price_usdc": price_map.get("/smart-contract-audit", 0.10),  "service": "smart_contract_audit"},
+                {"path": "/market-analysis",        "price_usdc": price_map.get("/market-analysis", 0.05),       "service": "market_analysis"},
+            ],
+        }
+
+    class TrustReq(BaseModel):
+        wallet: str
+
+    @app.post("/trust-report")
+    async def trust_report_ep(req: TrustReq):
+        result = trust_report.generate(req.wallet)
+        post_payment_hook("trust_report", chain, price_map.get("/trust-report", 0.01))
+        return result
+
+    class CodeReviewReq(BaseModel):
+        code: str
+        language: str = "solidity"
+
+    @app.post("/code-review")
+    async def code_review_ep(req: CodeReviewReq):
+        result = code_review.generate(req.code, req.language)
+        post_payment_hook("code_review", chain, price_map.get("/code-review", 0.05))
+        return result
+
+    class SummarizeReq(BaseModel):
+        text: str
+        format: str = "bullets"
+
+    @app.post("/summarize")
+    async def summarize_ep(req: SummarizeReq):
+        result = summarizer.generate(req.text, req.format)
+        post_payment_hook("summarize", chain, price_map.get("/summarize", 0.02))
+        return result
+
+    class SqlReq(BaseModel):
+        description: str
+        dialect: str = "postgres"
+
+    @app.post("/sql-generator")
+    async def sql_gen_ep(req: SqlReq):
+        result = sql_generator.generate(req.description, req.dialect)
+        post_payment_hook("sql_generator", chain, price_map.get("/sql-generator", 0.03))
+        return result
+
+    # ── New services ──────────────────────────────────────────────────────────
+
+    class TranslateReq(BaseModel):
+        text: str
+        target_language: str = "Spanish"
+
+    @app.post("/translate")
+    async def translate_ep(req: TranslateReq):
+        result = translate.generate(req.text, req.target_language)
+        post_payment_hook("translate", chain, price_map.get("/translate", 0.03))
+        return result
+
+    class CodeExplainReq(BaseModel):
+        code: str
+        language: str = "python"
+
+    @app.post("/code-explain")
+    async def code_explain_ep(req: CodeExplainReq):
+        result = code_explain.generate(req.code, req.language)
+        post_payment_hook("code_explain", chain, price_map.get("/code-explain", 0.02))
+        return result
+
+    class RegexReq(BaseModel):
+        description: str
+
+    @app.post("/regex-generator")
+    async def regex_gen_ep(req: RegexReq):
+        result = regex_generator.generate(req.description)
+        post_payment_hook("regex_generator", chain, price_map.get("/regex-generator", 0.03))
+        return result
+
+    class SentimentReq(BaseModel):
+        text: str
+
+    @app.post("/sentiment-analysis")
+    async def sentiment_ep(req: SentimentReq):
+        result = sentiment_analysis.generate(req.text)
+        post_payment_hook("sentiment_analysis", chain, price_map.get("/sentiment-analysis", 0.01))
+        return result
+
+    class AuditReq(BaseModel):
+        contract: str
+
+    @app.post("/smart-contract-audit")
+    async def audit_ep(req: AuditReq):
+        result = smart_contract_audit.generate(req.contract)
+        post_payment_hook("smart_contract_audit", chain, price_map.get("/smart-contract-audit", 0.10))
+        return result
+
+    class MarketReq(BaseModel):
+        token: str = "SOL"
+        timeframe: str = "7d"
+
+    @app.post("/market-analysis")
+    async def market_ep(req: MarketReq):
+        result = market_analysis.generate(req.token, req.timeframe)
+        post_payment_hook("market_analysis", chain, price_map.get("/market-analysis", 0.05))
+        return result
+
+    return app
+
+
+# ---------------------------------------------------------------------------
+# App instances — import these in uvicorn commands
+# ---------------------------------------------------------------------------
+
+FUJI_PRICES = {
+    "/trust-report":          0.01,
+    "/code-review":           0.05,
+    "/summarize":             0.02,
+    "/sql-generator":         0.03,
+    "/translate":             0.03,
+    "/code-explain":          0.02,
+    "/regex-generator":       0.03,
+    "/sentiment-analysis":    0.01,
+    "/smart-contract-audit":  0.10,
+    "/market-analysis":       0.05,
+}
+
+SOL_PRICES = {
+    "/trust-report":          0.005,
+    "/code-review":           0.025,
+    "/summarize":             0.01,
+    "/sql-generator":         0.015,
+    "/translate":             0.015,
+    "/code-explain":          0.01,
+    "/regex-generator":       0.015,
+    "/sentiment-analysis":    0.005,
+    "/smart-contract-audit":  0.05,
+    "/market-analysis":       0.025,
+}
+
+app_fuji = make_app(
+    chain="avalanche-fuji",
+    pay_to=os.environ.get("AGENT_B_EVM_ADDRESS", ""),
+    price_map=FUJI_PRICES,
+    port=8001,
+)
+
+app_sol = make_app(
+    chain="solana-devnet",
+    pay_to=os.environ.get("AGENT_B_SOLANA_ADDRESS", ""),
+    price_map=SOL_PRICES,
+    port=8002,
+)
+
+# Default app alias for `uvicorn agent_b.main:app --port 8001`
+app = app_fuji

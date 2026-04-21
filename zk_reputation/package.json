@@ -1,0 +1,16 @@
+{
+  "name": "agentpay-zk-reputation",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "init": "node zk_reputation.mjs init",
+    "mint": "node zk_reputation.mjs"
+  },
+  "dependencies": {
+    "@lightprotocol/compressed-token": "^0.22.0",
+    "@lightprotocol/stateless.js": "^0.22.0",
+    "@solana/web3.js": "^1.95.0",
+    "bs58": "^6.0.0",
+    "dotenv": "^16.0.0"
+  }
+}

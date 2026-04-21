@@ -1,0 +1,114 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── CSS Variables ─────────────────────────────────────────────────────────── */
+:root {
+  --bg-primary:    #000000;
+  --bg-card:       #0d0d0d;
+  --bg-elevated:   #141414;
+  --accent-green:  #00ff88;
+  --accent-yellow: #ffd700;
+  --accent-red:    #ff4444;
+  --accent-blue:   #4488ff;
+  --accent-orange: #ff8800;
+  --text-primary:  #ffffff;
+  --text-secondary: #888888;
+  --border:        #222222;
+  --border-hover:  #333333;
+}
+
+/* ── Base ──────────────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #0a0a0a; }
+::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+
+/* ── Dot grid background ──────────────────────────────────────────────────── */
+.dot-grid {
+  background-image: radial-gradient(circle, rgba(0, 255, 136, 0.12) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* ── Ticker scroll animation ─────────────────────────────────────────────── */
+@keyframes ticker-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* ── Glow pulse ──────────────────────────────────────────────────────────── */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(0, 255, 136, 0.4); }
+  50%       { box-shadow: 0 0 20px rgba(0, 255, 136, 0.8); }
+}
+
+/* ── Scan line (decorative) ──────────────────────────────────────────────── */
+@keyframes scan {
+  0%   { transform: translateY(-100%); opacity: 0; }
+  10%  { opacity: 0.06; }
+  90%  { opacity: 0.06; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+
+.scan-line::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-green), transparent);
+  animation: scan 8s linear infinite;
+  pointer-events: none;
+}
+
+/* ── Card hover lift ────────────────────────────────────────────────────── */
+.card-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.card-lift:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 12px 32px rgba(0, 255, 136, 0.1);
+  border-color: var(--accent-green) !important;
+}
+
+/* ── Terminal text ────────────────────────────────────────────────────────── */
+.terminal-text {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+/* ── Blinking cursor ─────────────────────────────────────────────────────── */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+.cursor-blink { animation: blink 1s step-end infinite; }
+
+/* ── Gradient title ──────────────────────────────────────────────────────── */
+.gradient-title {
+  font-family: 'Syne', sans-serif;
+  background: linear-gradient(135deg, #ffffff 40%, var(--accent-green) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Neon border ─────────────────────────────────────────────────────────── */
+.neon-border {
+  border: 1px solid rgba(0, 255, 136, 0.3);
+  box-shadow: 0 0 12px rgba(0, 255, 136, 0.05), inset 0 0 12px rgba(0, 255, 136, 0.02);
+}
+
+/* ── Chain left border ───────────────────────────────────────────────────── */
+.chain-sol  { border-left: 3px solid #9945ff; }
+.chain-avax { border-left: 3px solid #e84142; }

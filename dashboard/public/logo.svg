@@ -1,0 +1,53 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="softglow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="18" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" fill="#000000" rx="64"/>
+
+  <!-- Outer hexagon -->
+  <polygon points="256,28 452,140 452,372 256,484 60,372 60,140"
+           fill="none" stroke="#00ff88" stroke-width="10" opacity="0.9"/>
+
+  <!-- Inner hexagon (thinner) -->
+  <polygon points="256,80 410,168 410,344 256,432 102,344 102,168"
+           fill="none" stroke="#00ff88" stroke-width="2" opacity="0.2"/>
+
+  <!-- Circuit spokes from corners to edge (dim) -->
+  <line x1="256" y1="28"  x2="256" y2="108" stroke="#00ff88" stroke-width="2" opacity="0.3"/>
+  <line x1="452" y1="140" x2="382" y2="180" stroke="#00ff88" stroke-width="2" opacity="0.3"/>
+  <line x1="452" y1="372" x2="382" y2="332" stroke="#00ff88" stroke-width="2" opacity="0.3"/>
+  <line x1="256" y1="484" x2="256" y2="404" stroke="#00ff88" stroke-width="2" opacity="0.3"/>
+  <line x1="60"  y1="372" x2="130" y2="332" stroke="#00ff88" stroke-width="2" opacity="0.3"/>
+  <line x1="60"  y1="140" x2="130" y2="180" stroke="#00ff88" stroke-width="2" opacity="0.3"/>
+
+  <!-- Corner dots -->
+  <circle cx="256" cy="28"  r="5" fill="#00ff88" opacity="0.7"/>
+  <circle cx="452" cy="140" r="5" fill="#00ff88" opacity="0.7"/>
+  <circle cx="452" cy="372" r="5" fill="#00ff88" opacity="0.7"/>
+  <circle cx="256" cy="484" r="5" fill="#00ff88" opacity="0.7"/>
+  <circle cx="60"  cy="372" r="5" fill="#00ff88" opacity="0.7"/>
+  <circle cx="60"  cy="140" r="5" fill="#00ff88" opacity="0.7"/>
+
+  <!-- Glow bloom behind bolt -->
+  <polygon points="278,148 222,272 258,272 228,364 314,228 276,228 308,148"
+           fill="#00ff88" opacity="0.15" filter="url(#softglow)"/>
+
+  <!-- Lightning bolt (solid) -->
+  <polygon points="278,148 222,272 258,272 228,364 314,228 276,228 308,148"
+           fill="#00ff88" filter="url(#glow)"/>
+</svg>

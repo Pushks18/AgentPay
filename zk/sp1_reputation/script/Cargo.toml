@@ -1,0 +1,19 @@
+[package]
+name = "sp1-reputation-prover"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "prove"
+path = "src/main.rs"
+
+[dependencies]
+sp1-sdk = "3.0.0"
+solana-client = "1.18"
+solana-sdk = "1.18"
+sha2 = "0.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+hex = "0.4"
+tokio = { version = "1", features = ["full"] }
+dotenv = "0.15"

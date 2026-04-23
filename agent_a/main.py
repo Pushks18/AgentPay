@@ -11,6 +11,7 @@ Usage:
 import asyncio
 import json
 import os
+import re
 import sys
 import time
 from typing import Any, Dict, List, Optional
@@ -364,6 +365,24 @@ def run_scenario(scenario_name: str, user_input: str, budget: float = 0.50) -> d
     print(f"{'='*60}\n")
 
     return summary
+
+
+async def run_agent_task(task: str) -> dict:
+    """Run the main agent loop and return a compact structured result."""
+    result = await asyncio.to_thread(
+        agent.invoke,
+        {"messages": [{"role": "user", "content": task}]},
+        {"callbacks": [DashboardStreamer()]},
+    )
+    messages = result.get("messages", [])
+    result_text = str(messages[-1].content) if messages else ""
+    tx_match = re.search(r"explorer\.solana\.com/tx/([1-9A-HJ-NP-Za-km-z]+)", result_text)
+    paid_match = re.search(r"Amount Paid[^$]*\$\s*([0-9]+(?:\.[0-9]+)?)", result_text, re.IGNORECASE)
+    return {
+        "result": result_text,
+        "tx_hash": tx_match.group(1) if tx_match else "",
+        "total_paid": float(paid_match.group(1)) if paid_match else 0.0,
+    }
 
 
 # ---------------------------------------------------------------------------

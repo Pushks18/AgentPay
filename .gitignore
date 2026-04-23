@@ -11,3 +11,5 @@ target/
 .anchor/
 agent_a_sol.json
 agent_b_sol.json
+.claude
+.cursor

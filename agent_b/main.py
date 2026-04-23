@@ -321,13 +321,37 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
         post_payment_hook("market_analysis", chain, price_map.get("/market-analysis", 0.05))
         return result
 
-    class RunAgentReq(BaseModel):
-        service: str = "trust_report"
-        input: str = ""
-        scenario: Optional[str] = None
-
     @app.post("/run-agent")
-    async def run_agent_ep(req: RunAgentReq):
+    async def run_agent_ep(request: Request):
+        body = await request.json()
+        service = body.get("service", "trust_report")
+        input_text = body.get("input", "test")
+        local_port = os.environ.get("PORT", str(port))
+
+        payload_map = {
+            "trust_report": {"wallet": input_text},
+            "code_review": {"code": input_text, "language": "python"},
+            "summarize": {"text": input_text, "format": "bullets"},
+            "sql_generator": {"description": input_text, "dialect": "postgres"},
+            "regex_generator": {"description": input_text},
+            "translate": {"text": input_text, "target_language": "Spanish"},
+            "code_explain": {"code": input_text, "language": "python"},
+            "market_analysis": {"token": input_text, "timeframe": "7d"},
+            "sentiment_analysis": {"text": input_text},
+            "smart_contract_audit": {"contract": input_text},
+        }
+        service_endpoint_map = {
+            "trust_report": "/trust-report",
+            "code_review": "/code-review",
+            "summarize": "/summarize",
+            "sql_generator": "/sql-generator",
+            "regex_generator": "/regex-generator",
+            "translate": "/translate",
+            "code_explain": "/code-explain",
+            "market_analysis": "/market-analysis",
+            "sentiment_analysis": "/sentiment-analysis",
+            "smart_contract_audit": "/smart-contract-audit",
+        }
         service_to_agent = {
             "trust_report": "trust-reporter-sol",
             "code_review": "code-reviewer-sol",
@@ -340,53 +364,31 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
             "smart_contract_audit": "auditor-sol",
             "market_analysis": "market-analyst-sol",
         }
-        payload_map = {
-            "trust_report": lambda i: {"wallet": i},
-            "code_review": lambda i: {"code": i, "language": "python"},
-            "summarize": lambda i: {"text": i, "format": "bullets"},
-            "sql_generator": lambda i: {"description": i, "dialect": "postgres"},
-            "regex_generator": lambda i: {"description": i},
-            "translate": lambda i: {"text": i, "target_language": "Spanish"},
-            "code_explain": lambda i: {"code": i, "language": "python"},
-            "market_analysis": lambda i: {"token": i, "timeframe": "7d"},
-            "sentiment_analysis": lambda i: {"text": i},
-            "smart_contract_audit": lambda i: {"contract": i},
-        }
+
+        endpoint = f"http://127.0.0.1:{local_port}{service_endpoint_map.get(service, '/trust-report')}"
+        payload = payload_map.get(service, {"input": input_text})
 
         async def event_stream():
             try:
-                service = req.service or "trust_report"
-                input_text = req.input or "0xABCDEF1234"
-                local_port = os.environ.get("PORT", str(port))
-
-                # Ensure in-process Agent A calls route back to this service instance.
+                # Ensure in-process payment tool routes back to this service instance.
                 os.environ["AGENT_B_SOL_URL"] = f"http://127.0.0.1:{local_port}"
                 os.environ["AGENT_B_FUJI_URL"] = f"http://127.0.0.1:{local_port}"
 
-                yield f"data: {json.dumps({'log': '[AgentPay] Starting agent loop...'})}\n\n"
-                yield f"data: {json.dumps({'log': f'[AgentPay] Service: {service} | Input: {input_text[:80]}'})}\n\n"
+                yield f"data: {json.dumps({'log': f'[AgentPay] Discovered agent for {service}'})}\n\n"
+                yield f"data: {json.dumps({'log': '[AgentPay] Paying via x402 on Solana devnet...'})}\n\n"
 
-                from agent_a.main import run_agent_task
-                payload_builder = payload_map.get(service, lambda i: {"text": i})
-                payload = payload_builder(input_text)
-                task = (
-                    f"Use service '{service}'. "
-                    f"Call discover_agents(service='{service}'), choose the cheapest agent, "
-                    f"and execute payment with payload_json exactly as this JSON object: {json.dumps(payload)}. "
-                    "Then write reputation and return the final result with tx hash."
-                )
-                result = await run_agent_task(task)
-                payload = {
-                    "log": result.get("result", ""),
-                    "tx_hash": result.get("tx_hash", ""),
-                    "total_paid": result.get("total_paid", 0.0),
-                    "done": True,
-                }
-                tx_hash = payload["tx_hash"]
-                total_paid = float(payload["total_paid"] or 0.0)
-                agent_name = service_to_agent.get(service, "trust-reporter-sol")
+                from agent_a.tools.pay_sol import pay_and_fetch_solana_agent
+                result_str = pay_and_fetch_solana_agent.invoke({
+                    "agent_endpoint": endpoint,
+                    "payload_json": json.dumps(payload),
+                })
+                result = json.loads(result_str)
+                tx_hash = result.get("tx", "") or result.get("tx_hash", "")
+                body_data = result.get("body", {})
+                total_paid = float(result.get("amount_paid", 0.005))
+
                 if tx_hash:
-                    # Best-effort event push for graph edge animation.
+                    agent_name = service_to_agent.get(service, "trust-reporter-sol")
                     try:
                         async with httpx.AsyncClient(timeout=2.0) as client:
                             await client.post(
@@ -413,7 +415,9 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
                             "timestamp": int(time.time()),
                         }
                     )
-                yield f"data: {json.dumps(payload)}\n\n"
+
+                yield f"data: {json.dumps({'log': f'[AgentPay] Payment confirmed · TX: {tx_hash[:20]}...'})}\n\n"
+                yield f"data: {json.dumps({'log': str(body_data), 'tx_hash': tx_hash, 'total_paid': total_paid, 'done': True})}\n\n"
             except Exception as e:
                 yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
 

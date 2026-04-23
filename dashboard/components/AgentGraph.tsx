@@ -50,6 +50,7 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
   const [realAgents, setRealAgents] = useState<Agent[]>([]);
   const [realEdges, setRealEdges] = useState<Job[]>([]);
   const [liveEdges, setLiveEdges] = useState<Array<Job & { txHash?: string }>>([]);
+  const [liveNodes, setLiveNodes] = useState<Agent[]>([]);
   const seenTxHashesRef = useRef<Set<string>>(new Set());
 
   // Fetch real agents and transaction edges — polled every 20s and on agentpay:refresh
@@ -104,23 +105,27 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
 
   const AGENT_A_NODE: Agent = { id: "agent-a", name: "Agent A (Buyer)", reputation: 0, chain: "avalanche-fuji" };
 
-  // Build final node list: Agent A + top 6 registry agents
+  // Build final node list: Agent A + top 5 by reputation + any live-hired agents
   const nodes: Agent[] = (() => {
     const base = realAgents.length > 0 ? realAgents : agents;
     if (!base.length) {
-      return [
+      const fallback: Agent[] = [
         AGENT_A_NODE,
         { id: "trust-fuji",  name: "Trust Reporter", reputation: 847, chain: "avalanche-fuji" },
         { id: "code-sol",    name: "Code Reviewer",  reputation: 612, chain: "solana-devnet" },
         { id: "summarizer",  name: "Summariser",     reputation: 750, chain: "avalanche-fuji" },
         { id: "sql-gen",     name: "SQL Generator",  reputation: 530, chain: "solana-devnet" },
       ];
+      const extraLive = liveNodes.filter((n) => !fallback.some((f) => f.id === n.id || f.name === n.name));
+      return [...fallback, ...extraLive];
     }
-    const top6 = base
+    const top5 = base
       .filter((a) => a.id !== "agent-a")
       .sort((a, b) => b.reputation - a.reputation)
-      .slice(0, 6);
-    return [AGENT_A_NODE, ...top6];
+      .slice(0, 5);
+    // Always include recently-hired agents even if they didn't make top-5
+    const extraLive = liveNodes.filter((n) => !top5.some((t) => t.id === n.id || t.name === n.name));
+    return [AGENT_A_NODE, ...top5, ...extraLive];
   })();
 
   // Prefer real transaction edges; fallback to a simple star graph.
@@ -184,14 +189,45 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
       } catch { setTimeout(connect, 5000); }
     }
     connect();
-    return () => ws?.close();
-  }, [wsUrl]);
+
+    // agentpay:job — fired by HireTerminal and RunDemo on completion
+    function onJob(e: Event) {
+      const job = (e as CustomEvent).detail;
+      if (!job?.agentName) return;
+      const agentName = String(job.agentName);
+      const txHash = job.txHash ?? "";
+
+      // Add live node if not already tracked
+      setLiveNodes((prev) => {
+        if (prev.some((n) => n.name === agentName)) return prev;
+        const fromReal = realAgents.find((a) => a.name === agentName);
+        const node: Agent = fromReal ?? {
+          id: agentName, name: agentName,
+          reputation: 500, chain: job.chain ?? "solana-devnet",
+        };
+        return [...prev, node];
+      });
+
+      // Add live edge (skip duplicate from→to)
+      setLiveEdges((prev) => {
+        if (prev.some((edge) => edge.from === "agent-a" && edge.to === agentName)) return prev;
+        return [...prev, { id: `job-${txHash || Date.now()}`, from: "agent-a", to: agentName, amount: Number(job.amountPaid ?? 0.005), chain: job.chain ?? "solana-devnet", status: "confirmed" as const, txHash: txHash || undefined }];
+      });
+
+      // Pulse animation
+      const pulse: EdgePulse = { id: `pulse-job-${Date.now()}`, fromId: "agent-a", toId: agentName, startedAt: Date.now(), durationMs: 1200 };
+      setPulses((prev) => [...prev, pulse]);
+      setTimeout(() => setPulses((prev) => prev.filter((p) => p.id !== pulse.id)), 1200);
+    }
+
+    window.addEventListener("agentpay:job", onJob);
+    return () => { ws?.close(); window.removeEventListener("agentpay:job", onJob); };
+  }, [wsUrl, realAgents]);
 
   useEffect(() => {
     if (!svgRef.current) return;
     const svg = d3.select(svgRef.current);
     const { width, height } = svgRef.current.getBoundingClientRect();
-    console.log("links:", links);
     const nodeIds = new Set(nodes.map((n) => n.id));
     const nameToId = new Map(nodes.map((n) => [n.name.toLowerCase(), n.id]));
     const normalizedLinks = links.map((l) => {
@@ -340,7 +376,7 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
     );
 
     return () => { sim.stop(); };
-  }, [agents, jobs, realAgents, realEdges, liveEdges, router]);
+  }, [agents, jobs, realAgents, realEdges, liveEdges, liveNodes, router]);
 
   // Render traveling pulse dots as SVG overlays
   const pulseDots = pulses.map((pulse) => {

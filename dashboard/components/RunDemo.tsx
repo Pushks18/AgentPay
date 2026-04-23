@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 type DemoState = "idle" | "running" | "done" | "error";
 
@@ -33,12 +33,25 @@ function classifyLine(line: string): string {
   return "text-gray-300";
 }
 
+const SCENARIO_TO_SERVICE: Record<string, string> = {
+  trust_check: "trust_report", audit: "smart_contract_audit",
+  research: "market_analysis", translate_and_review: "translate",
+  full_pipeline: "smart_contract_audit",
+};
+const SERVICE_TO_AGENT: Record<string, string> = {
+  trust_report: "trust-reporter-sol", smart_contract_audit: "auditor-sol",
+  market_analysis: "market-analyst-sol", translate: "translator-sol",
+  summarize: "summarizer-sol", sentiment_analysis: "sentiment-sol",
+  sql_generator: "sql-gen-sol", code_review: "code-reviewer-sol",
+};
+
 export function RunDemo() {
   const [state, setState] = useState<DemoState>("idle");
   const [logs, setLogs] = useState<string[]>([]);
   const [scenario, setScenario] = useState("trust_check");
   const [input, setInput] = useState(DEFAULT_INPUTS["trust_check"]);
   const logRef = useRef<HTMLDivElement>(null);
+  const jobDataRef = useRef<{ txHash: string; totalPaid: number; service: string } | null>(null);
 
   useEffect(() => {
     setInput(DEFAULT_INPUTS[scenario] ?? "");
@@ -93,14 +106,45 @@ export function RunDemo() {
       if (!res.body) throw new Error("No stream from server");
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
+      jobDataRef.current = null;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
         const lines = chunk.split("\n");
+        for (const line of lines) {
+          const t = line.trim();
+          if (t.startsWith("data:")) {
+            try {
+              const ev = JSON.parse(t.slice(5).trim());
+              if (ev.done && (ev.tx_hash || ev.total_paid != null)) {
+                const svc = SCENARIO_TO_SERVICE[scenario] ?? scenario;
+                jobDataRef.current = { txHash: ev.tx_hash ?? "", totalPaid: Number(ev.total_paid ?? 0), service: svc };
+              }
+            } catch {}
+          }
+        }
         setLogs((prev) => [...prev, ...lines].slice(-300));
       }
       setState("done");
+      const jd = jobDataRef.current;
+      if (jd) {
+        const svc = jd.service;
+        window.dispatchEvent(new CustomEvent("agentpay:job", {
+          detail: {
+            id: `demo-${svc}-${Date.now()}`,
+            agentName: SERVICE_TO_AGENT[svc] ?? svc,
+            service: svc,
+            amountPaid: jd.totalPaid,
+            durationMs: 0,
+            status: "Completed",
+            txHash: jd.txHash || undefined,
+            explorerUrl: jd.txHash ? `https://explorer.solana.com/tx/${jd.txHash}?cluster=devnet` : undefined,
+            chain: "solana-devnet",
+            timestamp: Math.floor(Date.now() / 1000),
+          },
+        }));
+      }
       window.dispatchEvent(new CustomEvent("agentpay:refresh"));
     } catch (e) {
       setLogs((prev) => [...prev, `[Error] ${e}`]);

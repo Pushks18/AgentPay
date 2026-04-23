@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface Agent {
   id: string | number;
@@ -189,12 +189,26 @@ function AgentCard({ agent, onHire }: { agent: Agent; onHire: (a: Agent) => void
 }
 
 // Inline terminal for live hire output
+function parseDoneEvent(line: string): { txHash: string; totalPaid: number } | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("data:")) return null;
+  try {
+    const ev = JSON.parse(trimmed.slice(5).trim());
+    if (ev.done && (ev.tx_hash || ev.total_paid != null)) {
+      return { txHash: ev.tx_hash ?? "", totalPaid: Number(ev.total_paid ?? 0) };
+    }
+  } catch {}
+  return null;
+}
+
 function HireTerminal({ agent, onClose }: { agent: Agent; onClose: () => void }) {
   const [logs, setLogs] = useState<string[]>([]);
   const [done, setDone] = useState(false);
+  const jobDataRef = useRef<{ txHash: string; totalPaid: number } | null>(null);
 
   useEffect(() => {
     let active = true;
+    jobDataRef.current = null;
     setLogs([`[AgentPay] Hiring ${agent.name} for ${agent.service}...`, ""]);
 
     fetch("/api/hire", {
@@ -210,10 +224,31 @@ function HireTerminal({ agent, onClose }: { agent: Agent; onClose: () => void })
         if (d) break;
         const chunk = decoder.decode(value, { stream: true });
         const lines = chunk.split("\n");
+        for (const line of lines) {
+          const parsed = parseDoneEvent(line);
+          if (parsed) jobDataRef.current = parsed;
+        }
         setLogs((prev) => [...prev, ...lines].slice(-200));
       }
       if (active) {
         setDone(true);
+        const jd = jobDataRef.current;
+        window.dispatchEvent(new CustomEvent("agentpay:job", {
+          detail: {
+            id: `hire-${agent.name}-${Date.now()}`,
+            agentName: agent.name,
+            service: agent.service,
+            amountPaid: jd?.totalPaid || agent.priceUsd,
+            durationMs: 0,
+            status: "Completed",
+            txHash: jd?.txHash || undefined,
+            explorerUrl: jd?.txHash
+              ? `https://explorer.solana.com/tx/${jd.txHash}?cluster=devnet`
+              : undefined,
+            chain: agent.chain,
+            timestamp: Math.floor(Date.now() / 1000),
+          },
+        }));
         window.dispatchEvent(new CustomEvent("agentpay:refresh"));
       }
     }).catch((err) => {

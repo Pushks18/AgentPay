@@ -242,6 +242,20 @@ export function JobFeed({ wsUrl = "ws://localhost:3001" }: { wsUrl?: string }) {
     };
   }, []);
 
+  // Listen for instant job injection from hire/demo completions
+  useEffect(() => {
+    function onJob(e: Event) {
+      const job = (e as CustomEvent<Job>).detail;
+      if (!job?.id) return;
+      setJobs((prev) => {
+        if (prev.some((j) => j.id === job.id)) return prev;
+        return [job, ...prev].slice(0, 30);
+      });
+    }
+    window.addEventListener("agentpay:job", onJob);
+    return () => window.removeEventListener("agentpay:job", onJob);
+  }, []);
+
   // WebSocket for live updates
   useEffect(() => {
     let ws: WebSocket;

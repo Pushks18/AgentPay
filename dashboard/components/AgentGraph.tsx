@@ -148,8 +148,19 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
     if (!svgRef.current) return;
     const svg = d3.select(svgRef.current);
     const { width, height } = svgRef.current.getBoundingClientRect();
+    console.log("links:", links);
     const nodeIds = new Set(nodes.map((n) => n.id));
-    const graphLinks = links
+    const nameToId = new Map(nodes.map((n) => [n.name.toLowerCase(), n.id]));
+    const normalizedLinks = links.map((l) => {
+      const normalizedTo =
+        l.to === "agent-a" ? "agent-a" : nameToId.get(String(l.to).toLowerCase()) ?? l.to;
+      return {
+        ...l,
+        from: "agent-a",
+        to: normalizedTo,
+      };
+    });
+    const graphLinks = normalizedLinks
       .filter((l) => !!l.from && !!l.to && nodeIds.has(l.from) && nodeIds.has(l.to))
       .map((l) => ({ ...l, source: l.from, target: l.to }));
 
@@ -189,11 +200,12 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
     const linkSel = g.append("g").selectAll("line")
       .data(graphLinks as any)
       .join("line")
-      .attr("stroke", "rgba(0,255,136,0.35)")
+      .attr("stroke", "#00ff88")
+      .attr("stroke-opacity", 0.6)
       // Thicker edge = more jobs/volume between the same two nodes.
       .attr("stroke-width", (d: any) => {
         const jobs = Math.max(1, Math.round((d.amount ?? 0.005) / 0.005));
-        return Math.min(8, 1.2 + jobs * 0.5);
+        return Math.max(2, Math.min(8, 1.2 + jobs * 0.5));
       })
       .attr("marker-end", "url(#arrow)");
 
@@ -255,6 +267,12 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
       .force("charge", d3.forceManyBody().strength(-400))
       .force("center", d3.forceCenter(width / 2, height / 2))
       .force("collision", d3.forceCollide(40));
+
+    const agentANode = nodes.find((n) => n.id === "agent-a");
+    if (agentANode) {
+      agentANode.fx = width / 2;
+      agentANode.fy = height / 2;
+    }
 
     simRef.current = sim;
 

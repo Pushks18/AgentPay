@@ -245,7 +245,7 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
         }
         jobs = [
             {
-                "id": f"db-{i}",
+                "id": f"{r[0]}-{r[3]}-{i}",
                 "agentName": SERVICE_TO_AGENT.get(r[0], "agent-b"),
                 "service": r[0],
                 "amountPaid": r[2],

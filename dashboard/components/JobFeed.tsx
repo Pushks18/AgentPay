@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { ExternalLink } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ClientDate } from "@/components/ClientDate";
 
 type JobStatus = "Searching" | "Negotiating" | "Escrow Locked" | "Completed" | "Disputed";
@@ -151,7 +151,6 @@ export function JobFeed({ wsUrl = "ws://localhost:3001" }: { wsUrl?: string }) {
   const [jobs, setJobs] = useState<Job[]>([]); // Start empty — seeded client-side
   const [jobCount, setJobCount] = useState<number>(0);
   const [totalUsdc, setTotalUsdc] = useState<number>(0);
-  const fetchedRef = useRef(false);
 
   // Stamp seed jobs with real timestamps client-side (avoids SSR mismatch)
   useEffect(() => {
@@ -161,8 +160,7 @@ export function JobFeed({ wsUrl = "ws://localhost:3001" }: { wsUrl?: string }) {
 
   // Fetch real jobs and totals, with Helius fallback when /api/jobs is empty.
   useEffect(() => {
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
+    let mounted = true;
 
     async function fetchHeliusFallback(): Promise<Job[]> {
       const rpcUrl = `https://devnet.helius-rpc.com/?api-key=${HELIUS_KEY}`;
@@ -193,11 +191,14 @@ export function JobFeed({ wsUrl = "ws://localhost:3001" }: { wsUrl?: string }) {
     }
 
     async function fetchStatsAndJobs() {
+      if (!mounted) return;
       try {
         const [healthzRes, jobsRes] = await Promise.allSettled([
           fetch("https://agentpay-o5zt.onrender.com/healthz"),
           fetch("/api/jobs"),
         ]);
+
+        if (!mounted) return;
 
         if (healthzRes.status === "fulfilled") {
           const healthz = await healthzRes.value.json();
@@ -209,7 +210,8 @@ export function JobFeed({ wsUrl = "ws://localhost:3001" }: { wsUrl?: string }) {
         if (jobsRes.status === "fulfilled") {
           const data = await jobsRes.value.json();
           real = (data.jobs ?? []).map((j: any) => ({
-            id: j.id,
+            // Use service+timestamp as key so React detects new entries properly
+            id: j.id && !j.id.startsWith("db-") ? j.id : `${j.service ?? "job"}-${j.timestamp ?? Date.now()}`,
             agentName: j.agentName ?? "agent-b",
             service: j.service ?? "unknown",
             amountPaid: Number(j.amountPaid ?? 0),
@@ -224,7 +226,7 @@ export function JobFeed({ wsUrl = "ws://localhost:3001" }: { wsUrl?: string }) {
         if (real.length === 0) {
           real = await fetchHeliusFallback();
         }
-        if (real.length > 0) setJobs(real);
+        if (mounted && real.length > 0) setJobs(real);
       } catch (err) {
         console.error("[JobFeed] fetch failed:", err);
       }
@@ -234,6 +236,7 @@ export function JobFeed({ wsUrl = "ws://localhost:3001" }: { wsUrl?: string }) {
     const interval = setInterval(fetchStatsAndJobs, 10_000);
     window.addEventListener("agentpay:refresh", fetchStatsAndJobs);
     return () => {
+      mounted = false;
       clearInterval(interval);
       window.removeEventListener("agentpay:refresh", fetchStatsAndJobs);
     };

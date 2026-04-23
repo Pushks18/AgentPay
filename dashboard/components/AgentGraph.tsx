@@ -68,21 +68,29 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
         })
         .catch(() => {});
 
-      fetch("/api/transactions")
-        .then((r) => r.json())
-        .then((data) => {
-          const edgeWeights = new Map<string, number>();
-          for (const tx of data.transactions ?? []) {
-            const key = `${tx.from ?? "agent-a"}→${tx.to ?? "agent-b"}`;
-            edgeWeights.set(key, (edgeWeights.get(key) ?? 0) + 1);
-          }
-          const edges: Job[] = Array.from(edgeWeights.entries()).map(([key, count], i) => {
-            const [from, to] = key.split("→");
-            return { id: `edge-${i}`, from, to, amount: count * 0.005, chain: "solana-devnet", status: "done" as const };
-          });
-          setRealEdges(edges);
-        })
-        .catch(() => {});
+      // Build edges from both /api/transactions (Helius history) and
+      // /api/jobs (Render SQLite — instant, no confirmation lag)
+      Promise.allSettled([
+        fetch("/api/transactions").then((r) => r.json()),
+        fetch("/api/jobs").then((r) => r.json()),
+      ]).then(([txRes, jobsRes]) => {
+        const edgeWeights = new Map<string, number>();
+        const txList = txRes.status === "fulfilled" ? (txRes.value.transactions ?? []) : [];
+        for (const tx of txList) {
+          const key = `${tx.from ?? "agent-a"}→${tx.to ?? "agent-b"}`;
+          edgeWeights.set(key, (edgeWeights.get(key) ?? 0) + 1);
+        }
+        const jobList = jobsRes.status === "fulfilled" ? (jobsRes.value.jobs ?? []) : [];
+        for (const job of jobList) {
+          const key = `agent-a→${job.agentName ?? "agent-b"}`;
+          edgeWeights.set(key, (edgeWeights.get(key) ?? 0) + 1);
+        }
+        const edges: Job[] = Array.from(edgeWeights.entries()).map(([key, count], i) => {
+          const [from, to] = key.split("→");
+          return { id: `edge-${i}`, from, to, amount: count * 0.005, chain: "solana-devnet", status: "done" as const };
+        });
+        setRealEdges(edges);
+      }).catch(() => {});
     }
 
     fetchAll();

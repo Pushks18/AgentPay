@@ -5,6 +5,7 @@ Run (Solana x402 only):
     uvicorn agent_b.main:app --port 8002
 """
 import asyncio
+import httpx
 import json
 import os
 import sqlite3
@@ -327,6 +328,19 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
 
     @app.post("/run-agent")
     async def run_agent_ep(req: RunAgentReq):
+        service_to_agent = {
+            "trust_report": "trust-reporter-sol",
+            "code_review": "code-reviewer-sol",
+            "summarize": "summarizer-sol",
+            "sql_generator": "sql-gen-sol",
+            "translate": "translator-sol",
+            "code_explain": "code-explainer-sol",
+            "regex_generator": "regex-gen-sol",
+            "sentiment_analysis": "sentiment-sol",
+            "smart_contract_audit": "auditor-sol",
+            "market_analysis": "market-analyst-sol",
+        }
+
         async def event_stream():
             try:
                 service = req.service or "trust_report"
@@ -348,6 +362,37 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
                     "total_paid": result.get("total_paid", 0.0),
                     "done": True,
                 }
+                tx_hash = payload["tx_hash"]
+                total_paid = float(payload["total_paid"] or 0.0)
+                agent_name = service_to_agent.get(service, "trust-reporter-sol")
+                if tx_hash:
+                    # Best-effort event push for graph edge animation.
+                    try:
+                        async with httpx.AsyncClient(timeout=2.0) as client:
+                            await client.post(
+                                "http://127.0.0.1:3001/emit",
+                                json={
+                                    "event": "payment_confirmed",
+                                    "from": "agent-a",
+                                    "to": agent_name,
+                                    "amount": total_paid,
+                                    "chain": "solana",
+                                    "tx_hash": tx_hash,
+                                },
+                            )
+                    except Exception:
+                        pass
+                    fire_event(
+                        {
+                            "event": "payment_confirmed",
+                            "from": "agent-a",
+                            "to": agent_name,
+                            "amount": total_paid,
+                            "chain": "solana",
+                            "tx_hash": tx_hash,
+                            "timestamp": int(time.time()),
+                        }
+                    )
                 yield f"data: {json.dumps(payload)}\n\n"
             except Exception as e:
                 yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"

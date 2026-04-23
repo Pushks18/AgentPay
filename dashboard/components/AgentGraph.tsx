@@ -25,6 +25,7 @@ interface EdgePulse {
   fromId: string;
   toId: string;
   startedAt: number;
+  durationMs?: number;
 }
 
 function tierColor(reputation: number): string {
@@ -48,6 +49,8 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
   const [pulses, setPulses] = useState<EdgePulse[]>([]);
   const [realAgents, setRealAgents] = useState<Agent[]>([]);
   const [realEdges, setRealEdges] = useState<Job[]>([]);
+  const [liveEdges, setLiveEdges] = useState<Array<Job & { expiresAt: number; createdAt: number }>>([]);
+  const [nowMs, setNowMs] = useState<number>(Date.now());
 
   // Fetch real agents and transaction edges
   useEffect(() => {
@@ -104,7 +107,7 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
   })();
 
   // Prefer real transaction edges; fallback to a simple star graph.
-  const links: Job[] = realEdges.length > 0
+  const baseLinks: Job[] = realEdges.length > 0
     ? realEdges
     : nodes.slice(1).map((n, i) => ({
         id: `edge-${i}`,
@@ -114,6 +117,7 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
         chain: n.chain,
         status: "done" as const,
       }));
+  const links: Array<Job & { expiresAt?: number; createdAt?: number }> = [...baseLinks, ...liveEdges];
 
   // Listen for payment events and trigger edge pulses
   useEffect(() => {
@@ -130,9 +134,39 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
                 fromId: e.from || "agent-a",
                 toId: e.to || "trust-fuji",
                 startedAt: Date.now(),
+                durationMs: 1800,
               };
               setPulses((prev) => [...prev, pulse]);
               setTimeout(() => setPulses((prev) => prev.filter((p) => p.id !== pulse.id)), 1800);
+            }
+            if (e.event === "payment_confirmed") {
+              const edgeId = `live-${Date.now()}`;
+              const expiresAt = Date.now() + 30_000;
+              setLiveEdges((prev) => [
+                ...prev,
+                {
+                  id: edgeId,
+                  from: "agent-a",
+                  to: String(e.to || "trust-reporter-sol"),
+                  amount: Number(e.amount || 0.005),
+                  chain: String(e.chain || "solana"),
+                  status: "confirmed",
+                  createdAt: Date.now(),
+                  expiresAt,
+                },
+              ]);
+              setTimeout(() => {
+                setLiveEdges((prev) => prev.filter((edge) => edge.id !== edgeId));
+              }, 30_000);
+              const pulse: EdgePulse = {
+                id: `pulse-${Date.now()}`,
+                fromId: "agent-a",
+                toId: String(e.to || "trust-reporter-sol"),
+                startedAt: Date.now(),
+                durationMs: 1000,
+              };
+              setPulses((prev) => [...prev, pulse]);
+              setTimeout(() => setPulses((prev) => prev.filter((p) => p.id !== pulse.id)), 1000);
             }
           } catch {}
         };
@@ -143,6 +177,12 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
     connect();
     return () => ws?.close();
   }, [wsUrl]);
+
+  // Drive fade animation for live edges.
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 500);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (!svgRef.current) return;
@@ -201,7 +241,11 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
       .data(graphLinks as any)
       .join("line")
       .attr("stroke", "#00ff88")
-      .attr("stroke-opacity", 0.6)
+      .attr("stroke-opacity", (d: any) => {
+        if (!d.expiresAt) return 0.6;
+        const remaining = Math.max(0, d.expiresAt - nowMs);
+        return Math.max(0.08, 0.9 * (remaining / 30_000));
+      })
       // Thicker edge = more jobs/volume between the same two nodes.
       .attr("stroke-width", (d: any) => {
         const jobs = Math.max(1, Math.round((d.amount ?? 0.005) / 0.005));
@@ -297,14 +341,15 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
     );
 
     return () => { sim.stop(); };
-  }, [agents, jobs, realAgents, realEdges, router]);
+  }, [agents, jobs, realAgents, realEdges, liveEdges, nowMs, router]);
 
   // Render traveling pulse dots as SVG overlays
   const pulseDots = pulses.map((pulse) => {
     const from = nodePositions.current.get(pulse.fromId);
     const to = nodePositions.current.get(pulse.toId);
     if (!from || !to) return null;
-    const elapsed = (Date.now() - pulse.startedAt) / 1600;
+    const duration = pulse.durationMs ?? 1600;
+    const elapsed = (Date.now() - pulse.startedAt) / duration;
     const t = Math.min(elapsed, 1);
     const x = from.x + (to.x - from.x) * t;
     const y = from.y + (to.y - from.y) * t;

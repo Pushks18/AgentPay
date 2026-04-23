@@ -260,6 +260,24 @@ export function JobFeed({ wsUrl = "ws://localhost:3001" }: { wsUrl?: string }) {
                 timestamp: event.timestamp || Math.floor(Date.now() / 1000),
               };
               setJobs((prev) => [newJob, ...prev].slice(0, 30));
+            } else if (event.event === "payment_confirmed") {
+              const txHash = String(event.tx_hash || event.txHash || "");
+              const newJob: Job = {
+                id: txHash || String(Date.now()),
+                agentName: event.to || "agent-b",
+                service: event.service || "unknown",
+                amountPaid: Number(event.amount || 0.005),
+                durationMs: 0,
+                status: "Completed",
+                txHash: txHash || undefined,
+                explorerUrl: txHash ? `https://explorer.solana.com/tx/${txHash}?cluster=devnet` : undefined,
+                chain: "solana-devnet",
+                timestamp: event.timestamp || Math.floor(Date.now() / 1000),
+              };
+              setJobs((prev) => {
+                if (txHash && prev.some((j) => j.txHash === txHash)) return prev;
+                return [newJob, ...prev].slice(0, 30);
+              });
             } else if (event.event === "payment_initiated") {
               setJobs((prev) => {
                 const existing = prev.find((j) => j.id === event.job_id);

@@ -98,6 +98,26 @@ async def broadcast_event(event: dict):
         pass  # dashboard offline — don't block payment
 
 
+async def emit_graph_event(agent_name: str, tx_hash: str, amount: float, service: str):
+    """Emit dashboard graph/feed event without blocking the response stream."""
+    payload = {
+        "event": "payment_confirmed",
+        "from": "agent-a",
+        "to": agent_name,
+        "amount": amount,
+        "chain": "solana",
+        "tx_hash": tx_hash,
+        "service": service,
+        "timestamp": int(time.time()),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            await client.post("http://127.0.0.1:3001/emit", json=payload)
+    except Exception:
+        pass
+    fire_event(payload)
+
+
 def fire_event(event: dict):
     try:
         asyncio.get_event_loop().run_until_complete(broadcast_event(event))
@@ -436,31 +456,13 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
                 yield f"data: {json.dumps({'log': f'[DEBUG] Payment result: {json.dumps(result)}'})}\n\n"
 
                 agent_name = service_to_agent.get(service, "trust-reporter-sol")
-                try:
-                    async with httpx.AsyncClient(timeout=2.0) as client:
-                        await client.post(
-                            "http://127.0.0.1:3001/emit",
-                            json={
-                                "event": "payment_confirmed",
-                                "from": "agent-a",
-                                "to": agent_name,
-                                "amount": total_paid,
-                                "chain": "solana",
-                                "tx_hash": tx_hash,
-                            },
-                        )
-                except Exception:
-                    pass
-                fire_event(
-                    {
-                        "event": "payment_confirmed",
-                        "from": "agent-a",
-                        "to": agent_name,
-                        "amount": total_paid,
-                        "chain": "solana",
-                        "tx_hash": tx_hash,
-                        "timestamp": int(time.time()),
-                    }
+                asyncio.create_task(
+                    emit_graph_event(
+                        agent_name=agent_name,
+                        tx_hash=tx_hash,
+                        amount=total_paid,
+                        service=service,
+                    )
                 )
 
                 yield f"data: {json.dumps({'log': f'[AgentPay] Payment confirmed · TX: {tx_hash[:20]}...'})}\n\n"

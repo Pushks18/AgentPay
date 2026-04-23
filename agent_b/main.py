@@ -345,6 +345,7 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
         scenario = req.scenario or service_to_scenario.get(req.service, "trust_check")
         user_input = req.input or scenario_defaults.get(scenario, req.service)
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        local_port = os.environ.get("PORT", str(port))
 
         async def event_stream():
             cmd = [sys.executable, "-m", "agent_a.main", "--scenario", scenario, "--input", user_input]
@@ -353,8 +354,8 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
                 cwd=project_root,
                 env={
                     **os.environ,
-                    "AGENT_B_SOL_URL": f"http://127.0.0.1:{port}",
-                    "AGENT_B_FUJI_URL": f"http://127.0.0.1:{port}",
+                    "AGENT_B_SOL_URL": f"http://127.0.0.1:{local_port}",
+                    "AGENT_B_FUJI_URL": f"http://127.0.0.1:{local_port}",
                 },
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,

@@ -1,11 +1,8 @@
 """
 Agent B — Seller microservice.
 
-Run on Avalanche Fuji (port 8001):
-    uvicorn agent_b.main:app_fuji --port 8001
-
-Run on Solana devnet (port 8002):
-    uvicorn agent_b.main:app_sol --port 8002
+Run (Solana x402 only):
+    uvicorn agent_b.main:app --port 8002
 """
 import asyncio
 import json
@@ -25,7 +22,6 @@ from x402 import x402ResourceServer
 from x402.http import FacilitatorConfig, HTTPFacilitatorClient
 from x402.http.middleware.fastapi import PaymentMiddlewareASGI
 from x402.http.types import PaymentOption, RouteConfig
-from x402.mechanisms.evm.exact.register import register_exact_evm_server
 from x402.mechanisms.svm.exact.register import register_exact_svm_server
 
 load_dotenv()
@@ -165,14 +161,14 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
     facilitator = HTTPFacilitatorClient(FacilitatorConfig(url=facilitator_url))
     server = x402ResourceServer(facilitator)
 
-    if chain == "avalanche-fuji":
-        # x402 public facilitator currently supports Base Sepolia for EVM exact.
-        network = "eip155:84532"
-        register_exact_evm_server(server, networks=network)
-    else:
-        # x402 public facilitator uses the canonical Solana devnet CAIP-2 ID.
-        network = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"
-        register_exact_svm_server(server, networks=network)
+    # Solana-only x402 configuration for all protected routes.
+    # Canonical Solana devnet CAIP-2 network ID:
+    # solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1
+    network = os.environ.get(
+        "X402_SOLANA_NETWORK",
+        "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+    )
+    register_exact_svm_server(server, networks=network)
 
     protected_routes = {
         f"POST {path_}": RouteConfig(
@@ -327,21 +323,8 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
 
 
 # ---------------------------------------------------------------------------
-# App instances — import these in uvicorn commands
+# App instance — Solana-only deployment
 # ---------------------------------------------------------------------------
-
-FUJI_PRICES = {
-    "/trust-report":          0.01,
-    "/code-review":           0.05,
-    "/summarize":             0.02,
-    "/sql-generator":         0.03,
-    "/translate":             0.03,
-    "/code-explain":          0.02,
-    "/regex-generator":       0.03,
-    "/sentiment-analysis":    0.01,
-    "/smart-contract-audit":  0.10,
-    "/market-analysis":       0.05,
-}
 
 SOL_PRICES = {
     "/trust-report":          0.005,
@@ -356,13 +339,6 @@ SOL_PRICES = {
     "/market-analysis":       0.025,
 }
 
-app_fuji = make_app(
-    chain="avalanche-fuji",
-    pay_to=os.environ.get("AGENT_B_EVM_ADDRESS", ""),
-    price_map=FUJI_PRICES,
-    port=8001,
-)
-
 app_sol = make_app(
     chain="solana-devnet",
     pay_to=os.environ.get("AGENT_B_SOLANA_ADDRESS", ""),
@@ -370,5 +346,5 @@ app_sol = make_app(
     port=8002,
 )
 
-# Default app alias for `uvicorn agent_b.main:app --port 8001`
-app = app_fuji
+# Default app alias for `uvicorn agent_b.main:app --port 8002`
+app = app_sol

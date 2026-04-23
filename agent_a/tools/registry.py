@@ -24,17 +24,6 @@ _FUJI = os.environ.get("AGENT_B_FUJI_URL", "https://agentpay-o5zt.onrender.com")
 _SOL  = os.environ.get("AGENT_B_SOL_URL",  "https://agentpay-o5zt.onrender.com")
 
 FALLBACK_REGISTRY = [
-    # ── Avalanche Fuji (EVM) ────────────────────────────────────────────────
-    {"id": 1,  "name": "trust-reporter-fuji",      "service": "trust_report",         "endpoint": _FUJI + "/trust-report",         "chain": "avalanche-fuji", "price_usd": 0.01,  "reputation": 0.91, "tx_count": 3241, "active": True},
-    {"id": 2,  "name": "code-reviewer-fuji",        "service": "code_review",          "endpoint": _FUJI + "/code-review",          "chain": "avalanche-fuji", "price_usd": 0.05,  "reputation": 0.85, "tx_count": 1872, "active": True},
-    {"id": 3,  "name": "summarizer-fuji",           "service": "summarize",            "endpoint": _FUJI + "/summarize",            "chain": "avalanche-fuji", "price_usd": 0.02,  "reputation": 0.90, "tx_count": 2109, "active": True},
-    {"id": 4,  "name": "sql-gen-fuji",              "service": "sql_generator",        "endpoint": _FUJI + "/sql-generator",        "chain": "avalanche-fuji", "price_usd": 0.03,  "reputation": 0.87, "tx_count": 1456, "active": True},
-    {"id": 5,  "name": "translator-fuji",           "service": "translate",            "endpoint": _FUJI + "/translate",            "chain": "avalanche-fuji", "price_usd": 0.03,  "reputation": 0.89, "tx_count": 987,  "active": True},
-    {"id": 6,  "name": "code-explainer-fuji",       "service": "code_explain",         "endpoint": _FUJI + "/code-explain",         "chain": "avalanche-fuji", "price_usd": 0.02,  "reputation": 0.86, "tx_count": 743,  "active": True},
-    {"id": 7,  "name": "regex-gen-fuji",            "service": "regex_generator",      "endpoint": _FUJI + "/regex-generator",      "chain": "avalanche-fuji", "price_usd": 0.03,  "reputation": 0.85, "tx_count": 612,  "active": True},
-    {"id": 8,  "name": "sentiment-fuji",            "service": "sentiment_analysis",   "endpoint": _FUJI + "/sentiment-analysis",   "chain": "avalanche-fuji", "price_usd": 0.01,  "reputation": 0.92, "tx_count": 4102, "active": True},
-    {"id": 9,  "name": "auditor-fuji",              "service": "smart_contract_audit", "endpoint": _FUJI + "/smart-contract-audit", "chain": "avalanche-fuji", "price_usd": 0.10,  "reputation": 0.94, "tx_count": 521,  "active": True},
-    {"id": 10, "name": "market-analyst-fuji",       "service": "market_analysis",      "endpoint": _FUJI + "/market-analysis",      "chain": "avalanche-fuji", "price_usd": 0.05,  "reputation": 0.87, "tx_count": 1033, "active": True},
     # ── Solana devnet ───────────────────────────────────────────────────────
     {"id": "sol-trust",     "name": "trust-reporter-sol",    "service": "trust_report",         "endpoint": _SOL + "/trust-report",         "chain": "solana-devnet", "price_usd": 0.005,  "reputation": 0.92, "tx_count": 5814, "active": True},
     {"id": "sol-code",      "name": "code-reviewer-sol",      "service": "code_review",          "endpoint": _SOL + "/code-review",          "chain": "solana-devnet", "price_usd": 0.025,  "reputation": 0.89, "tx_count": 2341, "active": True},
@@ -46,6 +35,17 @@ FALLBACK_REGISTRY = [
     {"id": "sol-sentiment", "name": "sentiment-sol",          "service": "sentiment_analysis",   "endpoint": _SOL + "/sentiment-analysis",   "chain": "solana-devnet", "price_usd": 0.005,  "reputation": 0.93, "tx_count": 6203, "active": True},
     {"id": "sol-audit",     "name": "auditor-sol",            "service": "smart_contract_audit", "endpoint": _SOL + "/smart-contract-audit", "chain": "solana-devnet", "price_usd": 0.05,   "reputation": 0.95, "tx_count": 688,  "active": True},
     {"id": "sol-market",    "name": "market-analyst-sol",     "service": "market_analysis",      "endpoint": _SOL + "/market-analysis",      "chain": "solana-devnet", "price_usd": 0.025,  "reputation": 0.88, "tx_count": 1447, "active": True},
+    # ── Avalanche Fuji (EVM) ────────────────────────────────────────────────
+    {"id": 1,  "name": "trust-reporter-fuji",      "service": "trust_report",         "endpoint": _FUJI + "/trust-report",         "chain": "avalanche-fuji", "price_usd": 0.01,  "reputation": 0.91, "tx_count": 3241, "active": True},
+    {"id": 2,  "name": "code-reviewer-fuji",        "service": "code_review",          "endpoint": _FUJI + "/code-review",          "chain": "avalanche-fuji", "price_usd": 0.05,  "reputation": 0.85, "tx_count": 1872, "active": True},
+    {"id": 3,  "name": "summarizer-fuji",           "service": "summarize",            "endpoint": _FUJI + "/summarize",            "chain": "avalanche-fuji", "price_usd": 0.02,  "reputation": 0.90, "tx_count": 2109, "active": True},
+    {"id": 4,  "name": "sql-gen-fuji",              "service": "sql_generator",        "endpoint": _FUJI + "/sql-generator",        "chain": "avalanche-fuji", "price_usd": 0.03,  "reputation": 0.87, "tx_count": 1456, "active": True},
+    {"id": 5,  "name": "translator-fuji",           "service": "translate",            "endpoint": _FUJI + "/translate",            "chain": "avalanche-fuji", "price_usd": 0.03,  "reputation": 0.89, "tx_count": 987,  "active": True},
+    {"id": 6,  "name": "code-explainer-fuji",       "service": "code_explain",         "endpoint": _FUJI + "/code-explain",         "chain": "avalanche-fuji", "price_usd": 0.02,  "reputation": 0.86, "tx_count": 743,  "active": True},
+    {"id": 7,  "name": "regex-gen-fuji",            "service": "regex_generator",      "endpoint": _FUJI + "/regex-generator",      "chain": "avalanche-fuji", "price_usd": 0.03,  "reputation": 0.85, "tx_count": 612,  "active": True},
+    {"id": 8,  "name": "sentiment-fuji",            "service": "sentiment_analysis",   "endpoint": _FUJI + "/sentiment-analysis",   "chain": "avalanche-fuji", "price_usd": 0.01,  "reputation": 0.92, "tx_count": 4102, "active": True},
+    {"id": 9,  "name": "auditor-fuji",              "service": "smart_contract_audit", "endpoint": _FUJI + "/smart-contract-audit", "chain": "avalanche-fuji", "price_usd": 0.10,  "reputation": 0.94, "tx_count": 521,  "active": True},
+    {"id": 10, "name": "market-analyst-fuji",       "service": "market_analysis",      "endpoint": _FUJI + "/market-analysis",      "chain": "avalanche-fuji", "price_usd": 0.05,  "reputation": 0.87, "tx_count": 1033, "active": True},
 ]
 
 

@@ -13,6 +13,11 @@ from x402.mechanisms.svm.signers import KeypairSigner
 
 _key_bs58 = os.environ.get("AGENT_A_SOL_PRIVATE_KEY_BS58", "")
 _key_hex = os.environ.get("AGENT_A_SOLANA_PRIVATE_KEY_HEX", "")
+_svm_networks_raw = os.environ.get(
+    "X402_SVM_NETWORKS",
+    "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1,solana-devnet",
+)
+_svm_networks = [n.strip() for n in _svm_networks_raw.split(",") if n.strip()]
 
 if _key_bs58:
     import base58
@@ -24,7 +29,7 @@ else:
 
 x_client = x402Client()
 if sol_kp is not None:
-    register_exact_svm_client(x_client, signer=sol_kp)
+    register_exact_svm_client(x_client, signer=sol_kp, networks=_svm_networks)
 http_client = x402HTTPClient(x_client)
 
 

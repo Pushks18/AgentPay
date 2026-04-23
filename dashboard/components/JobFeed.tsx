@@ -22,6 +22,9 @@ interface Job {
   timestamp: number;
 }
 
+const AGENT_B_SOL = "8XFrS35Ch1tqzmAXZ4n4YBjAwSFgUZbwbqpKFWzyevYe";
+const HELIUS_KEY = process.env.NEXT_PUBLIC_HELIUS_API_KEY ?? "9ce8eb88-acf3-4c18-881b-bca557bee300";
+
 const STATUS_COLORS: Record<JobStatus, { bg: string; text: string; border: string }> = {
   Searching:       { bg: "rgba(68,136,255,0.12)", text: "#4488ff", border: "rgba(68,136,255,0.3)" },
   Negotiating:     { bg: "rgba(255,215,0,0.12)",  text: "#ffd700", border: "rgba(255,215,0,0.3)" },
@@ -122,16 +125,15 @@ function JobCard({ job }: { job: Job }) {
   );
 }
 
-function TotalsBar({ jobs }: { jobs: Job[] }) {
+function TotalsBar({ jobs, jobCount, totalUsdc }: { jobs: Job[]; jobCount: number; totalUsdc: number }) {
   const today = jobs.filter((j) => j.timestamp > Date.now() / 1000 - 86400);
-  const totalUsdc = today.filter((j) => j.status === "Completed").reduce((s, j) => s + j.amountPaid, 0);
   const avgMs = today.filter((j) => j.durationMs > 0).reduce((s, j) => s + j.durationMs, 0) /
     (today.filter((j) => j.durationMs > 0).length || 1);
 
   return (
     <div className="flex gap-4 text-[10px] font-mono pb-2 mb-2 flex-wrap"
       style={{ borderBottom: "1px solid var(--border)", color: "var(--text-secondary)" }}>
-      <span>Jobs: <span className="text-white">{today.length}</span></span>
+      <span>Jobs: <span className="text-white">{jobCount}</span></span>
       <span>Settled: <span style={{ color: "var(--accent-green)" }}>${totalUsdc.toFixed(4)}</span></span>
       {avgMs > 0 && <span>Avg: <span className="text-white">{(avgMs / 1000).toFixed(1)}s</span></span>}
     </div>
@@ -147,6 +149,8 @@ const SEED_JOBS: Job[] = [
 
 export function JobFeed({ wsUrl = "ws://localhost:3001" }: { wsUrl?: string }) {
   const [jobs, setJobs] = useState<Job[]>([]); // Start empty — seeded client-side
+  const [jobCount, setJobCount] = useState<number>(0);
+  const [totalUsdc, setTotalUsdc] = useState<number>(0);
   const fetchedRef = useRef(false);
 
   // Stamp seed jobs with real timestamps client-side (avoids SSR mismatch)
@@ -155,29 +159,80 @@ export function JobFeed({ wsUrl = "ws://localhost:3001" }: { wsUrl?: string }) {
     setJobs(SEED_JOBS.map((j, i) => ({ ...j, timestamp: now - (i + 1) * 300 })));
   }, []);
 
-  // Fetch real jobs from Helius and replace seed data
+  // Fetch real jobs and totals, with Helius fallback when /api/jobs is empty.
   useEffect(() => {
     if (fetchedRef.current) return;
     fetchedRef.current = true;
 
-    fetch("/api/jobs")
-      .then((r) => r.json())
-      .then((data) => {
-        const real: Job[] = (data.jobs ?? []).map((j: any) => ({
-          id: j.id,
-          agentName: j.agentName ?? "agent-b",
-          service: j.service ?? "unknown",
-          amountPaid: j.amountPaid ?? 0,
-          durationMs: j.durationMs ?? 0,
-          status: (j.status ?? "Completed") as JobStatus,
-          txHash: j.txHash,
-          explorerUrl: j.explorerUrl,
-          chain: (j.chain ?? "solana-devnet") as Job["chain"],
-          timestamp: j.timestamp ?? Math.floor(Date.now() / 1000),
-        }));
+    async function fetchHeliusFallback(): Promise<Job[]> {
+      const rpcUrl = `https://devnet.helius-rpc.com/?api-key=${HELIUS_KEY}`;
+      const res = await fetch(rpcUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "getSignaturesForAddress",
+          params: [AGENT_B_SOL, { limit: 20 }],
+        }),
+      });
+      const data = await res.json();
+      const sigs: any[] = Array.isArray(data?.result) ? data.result : [];
+      return sigs.map((s: any, idx: number) => ({
+        id: s.signature,
+        agentName: "agent-b",
+        service: "payment",
+        amountPaid: 0.005,
+        durationMs: 0,
+        status: "Completed",
+        txHash: s.signature,
+        explorerUrl: `https://explorer.solana.com/tx/${s.signature}?cluster=devnet`,
+        chain: "solana-devnet",
+        timestamp: s.blockTime ?? Math.floor(Date.now() / 1000) - idx * 60,
+      }));
+    }
+
+    async function fetchStatsAndJobs() {
+      try {
+        const [healthzRes, jobsRes] = await Promise.allSettled([
+          fetch("https://agentpay-o5zt.onrender.com/healthz"),
+          fetch("/api/jobs"),
+        ]);
+
+        if (healthzRes.status === "fulfilled") {
+          const healthz = await healthzRes.value.json();
+          setJobCount(Number(healthz?.total_jobs ?? 0));
+          setTotalUsdc(Number(healthz?.total_usdc ?? 0));
+        }
+
+        let real: Job[] = [];
+        if (jobsRes.status === "fulfilled") {
+          const data = await jobsRes.value.json();
+          real = (data.jobs ?? []).map((j: any) => ({
+            id: j.id,
+            agentName: j.agentName ?? "agent-b",
+            service: j.service ?? "unknown",
+            amountPaid: Number(j.amountPaid ?? 0),
+            durationMs: j.durationMs ?? 0,
+            status: (j.status ?? "Completed") as JobStatus,
+            txHash: j.txHash,
+            explorerUrl: j.explorerUrl,
+            chain: (j.chain ?? "solana-devnet") as Job["chain"],
+            timestamp: j.timestamp ?? Math.floor(Date.now() / 1000),
+          }));
+        }
+        if (real.length === 0) {
+          real = await fetchHeliusFallback();
+        }
         if (real.length > 0) setJobs(real);
-      })
-      .catch((err) => console.error("[JobFeed] fetch failed:", err));
+      } catch (err) {
+        console.error("[JobFeed] fetch failed:", err);
+      }
+    }
+
+    fetchStatsAndJobs();
+    const interval = setInterval(fetchStatsAndJobs, 10_000);
+    return () => clearInterval(interval);
   }, []);
 
   // WebSocket for live updates
@@ -236,7 +291,7 @@ export function JobFeed({ wsUrl = "ws://localhost:3001" }: { wsUrl?: string }) {
 
   return (
     <div className="flex flex-col gap-2">
-      <TotalsBar jobs={jobs} />
+      <TotalsBar jobs={jobs} jobCount={jobCount} totalUsdc={totalUsdc} />
       <div className="flex flex-col gap-2">
         <AnimatePresence initial={false}>
           {jobs.map((job) => <JobCard key={job.id} job={job} />)}

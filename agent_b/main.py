@@ -351,6 +351,11 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 cwd=project_root,
+                env={
+                    **os.environ,
+                    "AGENT_B_SOL_URL": f"http://127.0.0.1:{port}",
+                    "AGENT_B_FUJI_URL": f"http://127.0.0.1:{port}",
+                },
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )

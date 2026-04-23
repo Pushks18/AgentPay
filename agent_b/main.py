@@ -289,7 +289,22 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
 
     @app.post("/regex-generator")
     async def regex_gen_ep(req: RegexReq):
-        result = regex_generator.generate(req.description)
+        raw = regex_generator.generate(req.description)
+        # Always return a complete response object for dashboard rendering.
+        if isinstance(raw, dict):
+            result = {
+                "description": req.description,
+                "regex": raw.get("regex", ""),
+                "explanation": raw.get("explanation", "Generated regex pattern"),
+                "test_cases": raw.get("test_cases", []),
+            }
+        else:
+            result = {
+                "description": req.description,
+                "regex": str(raw or ""),
+                "explanation": "Generated regex pattern",
+                "test_cases": [],
+            }
         post_payment_hook("regex_generator", chain, price_map.get("/regex-generator", 0.03))
         return result
 
@@ -386,9 +401,17 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
                     },
                 )
                 result = json.loads(result_str)
-                tx_hash = result.get("tx", "") or result.get("tx_hash", "")
+                tx_hash = (
+                    result.get("tx")
+                    or result.get("tx_hash")
+                    or result.get("X-PAYMENT-RESPONSE")
+                    or ""
+                )
+                if not tx_hash and isinstance(result.get("body"), dict):
+                    tx_hash = result["body"].get("tx_hash", "")
                 body_data = result.get("body", {})
                 total_paid = float(result.get("amount_paid", 0.005))
+                yield f"data: {json.dumps({'log': f'[DEBUG] Payment result: {json.dumps(result)}'})}\n\n"
 
                 if tx_hash:
                     agent_name = service_to_agent.get(service, "trust-reporter-sol")

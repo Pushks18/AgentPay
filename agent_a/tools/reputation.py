@@ -37,6 +37,13 @@ REP_ABI = [
 
 ZK_SCRIPT = os.path.join(os.path.dirname(__file__), "../../agent_b/zk_reputation.mjs")
 
+# Solana registry IDs -> on-chain recipient addresses for reputation minting.
+AGENT_ADDRESSES = {
+    "sol-trust": "8XFrS35Ch1tqzmAXZ4n4YBjAwSFgUZbwbqpKFWzyevYe",
+    "sol-code": "8XFrS35Ch1tqzmAXZ4n4YBjAwSFgUZbwbqpKFWzyevYe",
+    "sol-summarize": "8XFrS35Ch1tqzmAXZ4n4YBjAwSFgUZbwbqpKFWzyevYe",
+}
+
 
 @tool
 def write_reputation_evm(agent_id: int, rating: float, tags: list = None) -> str:
@@ -85,8 +92,10 @@ def write_reputation_solana(agent_pubkey: str, score: int) -> str:
     if score <= 0:
         return json.dumps({"skipped": True, "reason": "score=0, no tokens minted"})
     try:
+        # Accept either a raw Solana pubkey or a registry agent ID (e.g. "sol-trust").
+        actual_address = AGENT_ADDRESSES.get(agent_pubkey, agent_pubkey)
         result = subprocess.run(
-            ["node", ZK_SCRIPT, agent_pubkey, str(score)],
+            ["node", ZK_SCRIPT, actual_address, str(score)],
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode != 0:

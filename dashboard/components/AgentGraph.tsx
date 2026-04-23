@@ -52,37 +52,46 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
   const [liveEdges, setLiveEdges] = useState<Array<Job & { txHash?: string }>>([]);
   const seenTxHashesRef = useRef<Set<string>>(new Set());
 
-  // Fetch real agents and transaction edges
+  // Fetch real agents and transaction edges — polled every 20s and on agentpay:refresh
   useEffect(() => {
-    fetch("/api/agents")
-      .then((r) => r.json())
-      .then((data) => {
-        const parsed: Agent[] = (data.agents ?? []).map((a: any) => ({
-          id: String(a.id ?? a.name),
-          name: a.name,
-          reputation: a.reputation > 1 ? a.reputation : Math.round(a.reputation * 1000),
-          chain: a.chain ?? "solana-devnet",
-        }));
-        setRealAgents(parsed);
-      })
-      .catch(() => {});
+    function fetchAll() {
+      fetch("/api/agents")
+        .then((r) => r.json())
+        .then((data) => {
+          const parsed: Agent[] = (data.agents ?? []).map((a: any) => ({
+            id: String(a.id ?? a.name),
+            name: a.name,
+            reputation: a.reputation > 1 ? a.reputation : Math.round(a.reputation * 1000),
+            chain: a.chain ?? "solana-devnet",
+          }));
+          setRealAgents(parsed);
+        })
+        .catch(() => {});
 
-    fetch("/api/transactions")
-      .then((r) => r.json())
-      .then((data) => {
-        // Build edge weight map from transaction history
-        const edgeWeights = new Map<string, number>();
-        for (const tx of data.transactions ?? []) {
-          const key = `${tx.from ?? "agent-a"}→${tx.to ?? "agent-b"}`;
-          edgeWeights.set(key, (edgeWeights.get(key) ?? 0) + 1);
-        }
-        const edges: Job[] = Array.from(edgeWeights.entries()).map(([key, count], i) => {
-          const [from, to] = key.split("→");
-          return { id: `edge-${i}`, from, to, amount: count * 0.005, chain: "solana-devnet", status: "done" as const };
-        });
-        setRealEdges(edges);
-      })
-      .catch(() => {});
+      fetch("/api/transactions")
+        .then((r) => r.json())
+        .then((data) => {
+          const edgeWeights = new Map<string, number>();
+          for (const tx of data.transactions ?? []) {
+            const key = `${tx.from ?? "agent-a"}→${tx.to ?? "agent-b"}`;
+            edgeWeights.set(key, (edgeWeights.get(key) ?? 0) + 1);
+          }
+          const edges: Job[] = Array.from(edgeWeights.entries()).map(([key, count], i) => {
+            const [from, to] = key.split("→");
+            return { id: `edge-${i}`, from, to, amount: count * 0.005, chain: "solana-devnet", status: "done" as const };
+          });
+          setRealEdges(edges);
+        })
+        .catch(() => {});
+    }
+
+    fetchAll();
+    const interval = setInterval(fetchAll, 20_000);
+    window.addEventListener("agentpay:refresh", fetchAll);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("agentpay:refresh", fetchAll);
+    };
   }, []);
 
   const AGENT_A_NODE: Agent = { id: "agent-a", name: "Agent A (Buyer)", reputation: 0, chain: "avalanche-fuji" };

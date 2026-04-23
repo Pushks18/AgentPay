@@ -232,7 +232,11 @@ export function JobFeed({ wsUrl = "ws://localhost:3001" }: { wsUrl?: string }) {
 
     fetchStatsAndJobs();
     const interval = setInterval(fetchStatsAndJobs, 10_000);
-    return () => clearInterval(interval);
+    window.addEventListener("agentpay:refresh", fetchStatsAndJobs);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("agentpay:refresh", fetchStatsAndJobs);
+    };
   }, []);
 
   // WebSocket for live updates

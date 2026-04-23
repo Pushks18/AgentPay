@@ -101,6 +101,7 @@ export function RunDemo() {
         setLogs((prev) => [...prev, ...lines].slice(-300));
       }
       setState("done");
+      window.dispatchEvent(new CustomEvent("agentpay:refresh"));
     } catch (e) {
       setLogs((prev) => [...prev, `[Error] ${e}`]);
       setState("error");

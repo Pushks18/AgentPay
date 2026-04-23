@@ -19,14 +19,14 @@ IDENTITY_ABI = [
     },
 ]
 
-# Fallback registry — updated to live Render URLs after deploy.
-_FUJI = os.environ.get("AGENT_B_FUJI_URL", "http://localhost:8001")
-_SOL  = os.environ.get("AGENT_B_SOL_URL",  "http://localhost:8002")
+# Fallback registry defaults to deployed Render service.
+_FUJI = os.environ.get("AGENT_B_FUJI_URL", "https://agentpay-o5zt.onrender.com")
+_SOL  = os.environ.get("AGENT_B_SOL_URL",  "https://agentpay-o5zt.onrender.com")
 
 FALLBACK_REGISTRY = [
     # ── Avalanche Fuji (EVM) ────────────────────────────────────────────────
     {"id": 1,  "name": "trust-reporter-fuji",      "service": "trust_report",         "endpoint": _FUJI + "/trust-report",         "chain": "avalanche-fuji", "price_usd": 0.01,  "reputation": 0.91, "tx_count": 3241, "active": True},
-    {"id": 2,  "name": "code-reviewer-fuji",        "service": "code_review",          "endpoint": _FUJI + "/code-review",          "chain": "avalanche-fuji", "price_usd": 0.05,  "reputation": 0.88, "tx_count": 1872, "active": True},
+    {"id": 2,  "name": "code-reviewer-fuji",        "service": "code_review",          "endpoint": _FUJI + "/code-review",          "chain": "avalanche-fuji", "price_usd": 0.05,  "reputation": 0.85, "tx_count": 1872, "active": True},
     {"id": 3,  "name": "summarizer-fuji",           "service": "summarize",            "endpoint": _FUJI + "/summarize",            "chain": "avalanche-fuji", "price_usd": 0.02,  "reputation": 0.90, "tx_count": 2109, "active": True},
     {"id": 4,  "name": "sql-gen-fuji",              "service": "sql_generator",        "endpoint": _FUJI + "/sql-generator",        "chain": "avalanche-fuji", "price_usd": 0.03,  "reputation": 0.87, "tx_count": 1456, "active": True},
     {"id": 5,  "name": "translator-fuji",           "service": "translate",            "endpoint": _FUJI + "/translate",            "chain": "avalanche-fuji", "price_usd": 0.03,  "reputation": 0.89, "tx_count": 987,  "active": True},

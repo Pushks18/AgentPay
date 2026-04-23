@@ -24,7 +24,6 @@ from langchain_core.messages import SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 
-from agent_a.tools.escrow import create_escrow, release_escrow, refund_escrow
 from agent_a.tools.negotiate import negotiate_price
 from agent_a.tools.pay_evm import pay_and_fetch_evm_agent
 from agent_a.tools.pay_sol import pay_and_fetch_solana_agent
@@ -130,10 +129,7 @@ STANDARD PROCESS (follow in order):
 1. Call discover_agents(service=<required service>).
 2. Pick the CHEAPEST agent with reputation >= 0.8.
 3. [Optional] Call negotiate_price(endpoint, offered_price, budget) to try for a discount.
-4. Try escrow first: create_escrow(seller_pubkey, amount_usdc, job_id).
-   - If create_escrow returns a "warning" or "error" field, skip to step 5 (direct payment).
-   - Never give up because escrow is unavailable.
-5. Pay and call the agent:
+4. Pay and call the agent:
    - chain="avalanche-fuji" → pay_and_fetch_evm_agent(endpoint, payload_json)
    - chain="solana-devnet"  → pay_and_fetch_solana_agent(endpoint, payload_json)
    payload_json must be a JSON string. Match keys to the service:
@@ -147,20 +143,16 @@ STANDARD PROCESS (follow in order):
      sentiment_analysis: {"text": "..."}
      smart_contract_audit: {"contract": "pragma solidity ..."}
      market_analysis: {"token": "SOL", "timeframe": "7d"}
-6. On success: if escrow was locked (no warning), call release_escrow(job_id, seller_pubkey).
-7. Rate the agent:
+5. Rate the agent:
    - EVM integer ID → write_reputation_evm(agent_id, rating, tags)
    - Solana string ID → write_reputation_solana(agent_pubkey, score=1)
-8. Return the final result plus a summary: total_paid, agents_hired, tx_hashes, time_taken.
+6. Return the final result plus a summary: total_paid, agents_hired, tx_hashes, time_taken.
 
 RULES:
-- Never ask for confirmation. Never give up due to escrow failure.
-- If escrow is unavailable, use direct x402 payment — this is fine.
+- Never ask for confirmation.
 - Max 2 retries if a payment fails.
-- Always release escrow before writing reputation (only if escrow was actually locked).
 - write_reputation_evm only accepts INTEGER agent_ids.
 - For Solana agents (id is a string like "sol-trust"), use write_reputation_solana.
-- USDC amounts: multiply price_usd by 1_000_000 for micro-units in escrow.
 """
 
 # ---------------------------------------------------------------------------
@@ -170,9 +162,6 @@ RULES:
 ALL_TOOLS = [
     discover_agents,
     negotiate_price,
-    create_escrow,
-    release_escrow,
-    refund_escrow,
     pay_and_fetch_evm_agent,
     pay_and_fetch_solana_agent,
     write_reputation_evm,

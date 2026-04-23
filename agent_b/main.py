@@ -378,10 +378,13 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
                 yield f"data: {json.dumps({'log': '[AgentPay] Paying via x402 on Solana devnet...'})}\n\n"
 
                 from agent_a.tools.pay_sol import pay_and_fetch_solana_agent
-                result_str = pay_and_fetch_solana_agent.invoke({
-                    "agent_endpoint": endpoint,
-                    "payload_json": json.dumps(payload),
-                })
+                result_str = await asyncio.to_thread(
+                    pay_and_fetch_solana_agent.invoke,
+                    {
+                        "agent_endpoint": endpoint,
+                        "payload_json": json.dumps(payload),
+                    },
+                )
                 result = json.loads(result_str)
                 tx_hash = result.get("tx", "") or result.get("tx_hash", "")
                 body_data = result.get("body", {})

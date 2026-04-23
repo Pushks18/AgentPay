@@ -49,8 +49,8 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
   const [pulses, setPulses] = useState<EdgePulse[]>([]);
   const [realAgents, setRealAgents] = useState<Agent[]>([]);
   const [realEdges, setRealEdges] = useState<Job[]>([]);
-  const [liveEdges, setLiveEdges] = useState<Array<Job & { expiresAt: number; createdAt: number }>>([]);
-  const [nowMs, setNowMs] = useState<number>(Date.now());
+  const [liveEdges, setLiveEdges] = useState<Array<Job & { txHash?: string }>>([]);
+  const seenTxHashesRef = useRef<Set<string>>(new Set());
 
   // Fetch real agents and transaction edges
   useEffect(() => {
@@ -117,7 +117,7 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
         chain: n.chain,
         status: "done" as const,
       }));
-  const links: Array<Job & { expiresAt?: number; createdAt?: number }> = [...baseLinks, ...liveEdges];
+  const links: Array<Job & { txHash?: string }> = [...baseLinks, ...liveEdges];
 
   // Listen for payment events and trigger edge pulses
   useEffect(() => {
@@ -128,36 +128,28 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
         ws.onmessage = (msg) => {
           try {
             const e = JSON.parse(msg.data);
-            if (e.event === "payment_initiated") {
-              const pulse: EdgePulse = {
-                id: String(Date.now()),
-                fromId: e.from || "agent-a",
-                toId: e.to || "trust-fuji",
-                startedAt: Date.now(),
-                durationMs: 1800,
-              };
-              setPulses((prev) => [...prev, pulse]);
-              setTimeout(() => setPulses((prev) => prev.filter((p) => p.id !== pulse.id)), 1800);
-            }
             if (e.event === "payment_confirmed") {
-              const edgeId = `live-${Date.now()}`;
-              const expiresAt = Date.now() + 30_000;
-              setLiveEdges((prev) => [
-                ...prev,
-                {
-                  id: edgeId,
-                  from: "agent-a",
-                  to: String(e.to || "trust-reporter-sol"),
-                  amount: Number(e.amount || 0.005),
-                  chain: String(e.chain || "solana"),
-                  status: "confirmed",
-                  createdAt: Date.now(),
-                  expiresAt,
-                },
-              ]);
-              setTimeout(() => {
-                setLiveEdges((prev) => prev.filter((edge) => edge.id !== edgeId));
-              }, 30_000);
+              const txHash = String(e.tx_hash || e.txHash || "");
+              if (txHash && seenTxHashesRef.current.has(txHash)) return;
+              if (txHash) seenTxHashesRef.current.add(txHash);
+              const edgeId = txHash ? `live-${txHash}` : `live-${Date.now()}`;
+              setLiveEdges((prev) => {
+                const to = String(e.to || "trust-reporter-sol");
+                // Persist edge permanently and avoid duplicate from->to edges.
+                if (prev.some((edge) => edge.from === "agent-a" && edge.to === to)) return prev;
+                return [
+                  ...prev,
+                  {
+                    id: edgeId,
+                    from: "agent-a",
+                    to,
+                    amount: Number(e.amount || 0.005),
+                    chain: String(e.chain || "solana"),
+                    status: "confirmed",
+                    txHash: txHash || undefined,
+                  },
+                ];
+              });
               const pulse: EdgePulse = {
                 id: `pulse-${Date.now()}`,
                 fromId: "agent-a",
@@ -177,12 +169,6 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
     connect();
     return () => ws?.close();
   }, [wsUrl]);
-
-  // Drive fade animation for live edges.
-  useEffect(() => {
-    const id = setInterval(() => setNowMs(Date.now()), 500);
-    return () => clearInterval(id);
-  }, []);
 
   useEffect(() => {
     if (!svgRef.current) return;
@@ -241,11 +227,7 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
       .data(graphLinks as any)
       .join("line")
       .attr("stroke", "#00ff88")
-      .attr("stroke-opacity", (d: any) => {
-        if (!d.expiresAt) return 0.6;
-        const remaining = Math.max(0, d.expiresAt - nowMs);
-        return Math.max(0.08, 0.9 * (remaining / 30_000));
-      })
+      .attr("stroke-opacity", 0.6)
       // Thicker edge = more jobs/volume between the same two nodes.
       .attr("stroke-width", (d: any) => {
         const jobs = Math.max(1, Math.round((d.amount ?? 0.005) / 0.005));
@@ -341,7 +323,7 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
     );
 
     return () => { sim.stop(); };
-  }, [agents, jobs, realAgents, realEdges, liveEdges, nowMs, router]);
+  }, [agents, jobs, realAgents, realEdges, liveEdges, router]);
 
   // Render traveling pulse dots as SVG overlays
   const pulseDots = pulses.map((pulse) => {

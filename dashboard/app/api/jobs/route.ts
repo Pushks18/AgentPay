@@ -57,8 +57,24 @@ function inferService(tx: any): string {
   return "payment";
 }
 
+const RENDER_URL = process.env.AGENT_B_RENDER_URL ?? "https://agentpay-o5zt.onrender.com";
+
 export async function GET() {
   const now = Math.floor(Date.now() / 1000);
+
+  // Try Render SQLite first — always up-to-date, no block confirmation lag
+  try {
+    const res = await fetch(`${RENDER_URL}/recent-jobs`, { signal: AbortSignal.timeout(4000) });
+    if (res.ok) {
+      const data = await res.json();
+      const jobs: any[] = data.jobs ?? [];
+      if (jobs.length > 0) {
+        return NextResponse.json({ jobs, source: "render-sqlite", total: jobs.length });
+      }
+    }
+  } catch {
+    // fall through to Helius
+  }
 
   try {
     // Step 1: get signatures

@@ -224,6 +224,40 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
             **get_stats(),
         }
 
+    @app.get("/recent-jobs")
+    def recent_jobs():
+        con = sqlite3.connect(DB_PATH)
+        rows = con.execute(
+            "SELECT service, chain, amount_usdc, ts FROM jobs ORDER BY id DESC LIMIT 20"
+        ).fetchall()
+        con.close()
+        SERVICE_TO_AGENT = {
+            "trust_report": "trust-reporter-sol",
+            "code_review": "code-reviewer-sol",
+            "summarize": "summarizer-sol",
+            "sql_generator": "sql-gen-sol",
+            "translate": "translator-sol",
+            "code_explain": "code-explainer-sol",
+            "regex_generator": "regex-gen-sol",
+            "sentiment_analysis": "sentiment-sol",
+            "smart_contract_audit": "auditor-sol",
+            "market_analysis": "market-analyst-sol",
+        }
+        jobs = [
+            {
+                "id": f"db-{i}",
+                "agentName": SERVICE_TO_AGENT.get(r[0], "agent-b"),
+                "service": r[0],
+                "amountPaid": r[2],
+                "durationMs": 0,
+                "status": "Completed",
+                "chain": r[1] if r[1] in ("solana-devnet", "avalanche-fuji") else "solana-devnet",
+                "timestamp": r[3],
+            }
+            for i, r in enumerate(rows)
+        ]
+        return {"jobs": jobs, "source": "sqlite"}
+
     @app.get("/manifest")
     def manifest():
         return {

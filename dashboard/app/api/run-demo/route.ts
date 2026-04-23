@@ -27,10 +27,20 @@ export async function POST(req: NextRequest) {
 
   if (!userInput) userInput = SCENARIO_DEFAULTS[scenario] ?? "";
 
+  // Map dashboard scenario names → agent_b service names
+  const SCENARIO_TO_SERVICE: Record<string, string> = {
+    trust_check:          "trust_report",
+    audit:                "smart_contract_audit",
+    research:             "market_analysis",
+    translate_and_review: "translate",
+    full_pipeline:        "smart_contract_audit",
+  };
+  const service = SCENARIO_TO_SERVICE[scenario] ?? scenario;
+
   const upstream = await fetch(`${RENDER_URL}/run-agent`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ service: scenario, input: userInput, scenario }),
+    body: JSON.stringify({ service, input: userInput, scenario }),
   });
 
   if (!upstream.ok || !upstream.body) {

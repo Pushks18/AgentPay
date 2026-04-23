@@ -212,7 +212,10 @@ function HireTerminal({ agent, onClose }: { agent: Agent; onClose: () => void })
         const lines = chunk.split("\n");
         setLogs((prev) => [...prev, ...lines].slice(-200));
       }
-      if (active) setDone(true);
+      if (active) {
+        setDone(true);
+        window.dispatchEvent(new CustomEvent("agentpay:refresh"));
+      }
     }).catch((err) => {
       if (active) { setLogs((p) => [...p, `[Error] ${err.message}`]); setDone(true); }
     });

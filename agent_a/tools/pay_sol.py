@@ -2,12 +2,13 @@ import asyncio
 import base64
 import json
 import os
+import traceback
 
+import httpx
 from langchain_core.tools import tool
 from solders.keypair import Keypair
 from x402 import x402Client
-from x402.http import x402HTTPClient
-from x402.http.clients.httpx import x402HttpxClient
+from x402.http.clients.httpx import x402AsyncTransport
 from x402.mechanisms.svm.exact.register import register_exact_svm_client
 from x402.mechanisms.svm.signers import KeypairSigner
 
@@ -30,8 +31,6 @@ else:
 x_client = x402Client()
 if sol_kp is not None:
     register_exact_svm_client(x_client, signer=sol_kp, networks=_svm_networks)
-http_client = x402HTTPClient(x_client)
-
 
 @tool
 def pay_and_fetch_solana_agent(agent_endpoint: str, payload_json: str) -> str:
@@ -46,8 +45,9 @@ def pay_and_fetch_solana_agent(agent_endpoint: str, payload_json: str) -> str:
     async def _run():
         body = json.loads(payload_json) if payload_json else {}
         try:
-            async with x402HttpxClient(http_client) as c:
-                resp = await c.post(agent_endpoint, json=body)
+            transport = x402AsyncTransport(client=x_client)
+            async with httpx.AsyncClient(transport=transport, timeout=30) as client:
+                resp = await client.post(agent_endpoint, json=body)
                 # x402 v2 uses PAYMENT-RESPONSE; v1 legacy uses X-PAYMENT-RESPONSE
                 tx_raw = (
                     resp.headers.get("payment-response")
@@ -68,15 +68,18 @@ def pay_and_fetch_solana_agent(agent_endpoint: str, payload_json: str) -> str:
                         amount_paid = pay_resp.get("amount", pay_resp.get("amountPaid", 0.005))
                 except Exception:
                     tx_hash = tx_raw
+                content_type = resp.headers.get("content-type", "")
+                body_data = resp.json() if content_type.startswith("application/json") else {"text": resp.text}
                 return json.dumps({
                     "status": resp.status_code,
-                    "body": resp.json(),
+                    "body": body_data,
+                    "tx": tx_hash,
                     "tx_hash": tx_hash,
                     "chain": "solana-devnet",
                     "amount_paid": amount_paid,
                     "explorer_url": f"https://explorer.solana.com/tx/{tx_hash}?cluster=devnet" if tx_hash else "",
                 })
         except Exception as e:
-            return json.dumps({"error": str(e), "retry_with_next": True})
+            return json.dumps({"error": str(e), "traceback": traceback.format_exc(), "retry_with_next": True})
 
     return asyncio.run(_run())

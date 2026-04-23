@@ -7,8 +7,10 @@ Run (Solana x402 only):
 import asyncio
 import json
 import os
+import re
 import sqlite3
 import subprocess
+import sys
 import time
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -17,6 +19,7 @@ import websockets
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from x402 import x402ResourceServer
 from x402.http import FacilitatorConfig, HTTPFacilitatorClient
@@ -318,6 +321,83 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
         result = market_analysis.generate(req.token, req.timeframe)
         post_payment_hook("market_analysis", chain, price_map.get("/market-analysis", 0.05))
         return result
+
+    class RunAgentReq(BaseModel):
+        service: str = "trust_report"
+        input: str = ""
+        scenario: Optional[str] = None
+
+    @app.post("/run-agent")
+    async def run_agent_ep(req: RunAgentReq):
+        service_to_scenario = {
+            "trust_report": "trust_check",
+            "smart_contract_audit": "audit",
+            "market_analysis": "research",
+            "translate": "translate_and_review",
+            "code_review": "translate_and_review",
+        }
+        scenario_defaults = {
+            "trust_check": "0xABCDEF1234567890000000000000000000001234",
+            "audit": "pragma solidity ^0.8.0; contract Vault { mapping(address=>uint) balances; function deposit() external payable { balances[msg.sender] += msg.value; } function withdraw(uint amt) external { require(balances[msg.sender] >= amt); (bool ok,) = msg.sender.call{value: amt}(\"\"); balances[msg.sender] -= amt; } }",
+            "research": "SOL",
+            "translate_and_review": "// Cette fonction transfère des tokens\nfunction transferTokens(address to, uint256 amount) external { require(amount > 0); token.transfer(to, amount); }",
+        }
+        scenario = req.scenario or service_to_scenario.get(req.service, "trust_check")
+        user_input = req.input or scenario_defaults.get(scenario, req.service)
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+        async def event_stream():
+            cmd = [sys.executable, "-m", "agent_a.main", "--scenario", scenario, "--input", user_input]
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=project_root,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            tx_hashes = []
+            tx_pattern = re.compile(r"explorer\.solana\.com/tx/([1-9A-HJ-NP-Za-km-z]+)")
+
+            async def emit_line(prefix: str, line: str):
+                nonlocal tx_hashes
+                for m in tx_pattern.finditer(line):
+                    tx_hashes.append(m.group(1))
+                payload = {"type": prefix, "line": line.rstrip("\n")}
+                return f"data: {json.dumps(payload)}\n\n"
+
+            if proc.stdout:
+                while True:
+                    line = await proc.stdout.readline()
+                    if not line:
+                        break
+                    yield await emit_line("stdout", line.decode("utf-8", errors="replace"))
+
+            if proc.stderr:
+                while True:
+                    line = await proc.stderr.readline()
+                    if not line:
+                        break
+                    txt = line.decode("utf-8", errors="replace")
+                    if "DeprecationWarning" in txt or "UserWarning" in txt:
+                        continue
+                    yield await emit_line("stderr", txt)
+
+            code = await proc.wait()
+            final = {
+                "type": "final",
+                "scenario": scenario,
+                "service": req.service,
+                "exit_code": code,
+                "tx_hashes": tx_hashes,
+                "tx_hash": tx_hashes[-1] if tx_hashes else "",
+            }
+            yield f"data: {json.dumps(final)}\n\n"
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     return app
 

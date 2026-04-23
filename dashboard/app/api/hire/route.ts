@@ -1,9 +1,9 @@
 import { NextRequest } from "next/server";
-import { spawn } from "child_process";
-import path from "path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const RENDER_URL = process.env.AGENT_B_RENDER_URL ?? "https://agentpay-o5zt.onrender.com";
 
 export async function POST(req: NextRequest) {
   let agentService = "trust_report";
@@ -37,46 +37,24 @@ export async function POST(req: NextRequest) {
   const scenario = SERVICE_TO_SCENARIO[agentService] ?? "trust_check";
   const input = SERVICE_DEFAULTS[agentService] ?? agentService;
 
-  const projectRoot = path.resolve(process.cwd(), "..");
-  const python = path.join(projectRoot, ".venv", "bin", "python3");
-
-  const stream = new ReadableStream({
-    start(controller) {
-      const enc = new TextEncoder();
-      const push = (s: string) => { try { controller.enqueue(enc.encode(s)); } catch {} };
-
-      push(`[AgentPay] Hiring agent for service: ${agentService}\n`);
-      push(`[AgentPay] Running scenario: ${scenario}\n\n`);
-
-      const child = spawn(
-        python,
-        ["-m", "agent_a.main", "--scenario", scenario, "--input", input],
-        {
-          cwd: projectRoot,
-          env: { ...process.env, PYTHONUNBUFFERED: "1" },
-        }
-      );
-
-      child.stdout.on("data", (data: Buffer) => push(data.toString()));
-      child.stderr.on("data", (data: Buffer) => {
-        const text = data.toString();
-        if (text.includes("DeprecationWarning") || text.includes("UserWarning")) return;
-        push(text);
-      });
-      child.on("close", (code) => {
-        push(`\n[Done] Agent completed. Exit code: ${code}\n`);
-        try { controller.close(); } catch {}
-      });
-      child.on("error", (err) => {
-        push(`[Error] ${err.message}\n`);
-        try { controller.close(); } catch {}
-      });
-    },
+  const upstream = await fetch(`${RENDER_URL}/run-agent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ service: agentService, input, scenario }),
   });
 
-  return new Response(stream, {
+  if (!upstream.ok || !upstream.body) {
+    const text = await upstream.text().catch(() => "");
+    return new Response(`[Error] Render run-agent failed (${upstream.status}) ${text}\n`, {
+      status: 502,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+
+  return new Response(upstream.body, {
+    status: 200,
     headers: {
-      "Content-Type": "text/plain; charset=utf-8",
+      "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache",
       "X-Content-Type-Options": "nosniff",
     },

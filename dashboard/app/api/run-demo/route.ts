@@ -1,9 +1,8 @@
 import { NextRequest } from "next/server";
-import { spawn } from "child_process";
-import path from "path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const RENDER_URL = process.env.AGENT_B_RENDER_URL ?? "https://agentpay-o5zt.onrender.com";
 
 const SCENARIO_DEFAULTS: Record<string, string> = {
   audit:
@@ -28,44 +27,24 @@ export async function POST(req: NextRequest) {
 
   if (!userInput) userInput = SCENARIO_DEFAULTS[scenario] ?? "";
 
-  const projectRoot = path.resolve(process.cwd(), "..");
-  const python = path.join(projectRoot, ".venv", "bin", "python3");
-
-  const args = ["--scenario", scenario, "--input", userInput];
-
-  const stream = new ReadableStream({
-    start(controller) {
-      const enc = new TextEncoder();
-      const push = (s: string) => controller.enqueue(enc.encode(s));
-
-      push(`[AgentPay] Starting scenario: ${scenario}\n`);
-      push(`[AgentPay] Input: ${userInput.slice(0, 80)}${userInput.length > 80 ? "..." : ""}\n\n`);
-
-      const child = spawn(python, ["-m", "agent_a.main", ...args], {
-        cwd: projectRoot,
-        env: { ...process.env, PYTHONUNBUFFERED: "1" },
-      });
-
-      child.stdout.on("data", (data: Buffer) => push(data.toString()));
-      child.stderr.on("data", (data: Buffer) => {
-        const text = data.toString();
-        if (text.includes("DeprecationWarning") || text.includes("UserWarning")) return;
-        push(text);
-      });
-      child.on("close", (code) => {
-        push(`\n[Done] Exit code: ${code}\n`);
-        controller.close();
-      });
-      child.on("error", (err) => {
-        push(`[Error] ${err.message}\n`);
-        controller.close();
-      });
-    },
+  const upstream = await fetch(`${RENDER_URL}/run-agent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ service: scenario, input: userInput, scenario }),
   });
 
-  return new Response(stream, {
+  if (!upstream.ok || !upstream.body) {
+    const text = await upstream.text().catch(() => "");
+    return new Response(`[Error] Render run-agent failed (${upstream.status}) ${text}\n`, {
+      status: 502,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+
+  return new Response(upstream.body, {
+    status: 200,
     headers: {
-      "Content-Type": "text/plain; charset=utf-8",
+      "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache",
       "X-Content-Type-Options": "nosniff",
     },

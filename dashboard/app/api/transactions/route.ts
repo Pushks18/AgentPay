@@ -29,6 +29,36 @@ async function rpc(method: string, params: any[], timeoutMs = 5000) {
   return json.result;
 }
 
+const SERVICE_MAP: Record<string, { name: string; price: number }> = {
+  trust_report:         { name: "trust-reporter-sol", price: 0.005 },
+  code_review:          { name: "code-reviewer-sol", price: 0.025 },
+  summarize:            { name: "summarizer-sol", price: 0.01 },
+  sql_generator:        { name: "sql-gen-sol", price: 0.015 },
+  translate:            { name: "translator-sol", price: 0.015 },
+  code_explain:         { name: "code-explainer-sol", price: 0.01 },
+  regex_generator:      { name: "regex-gen-sol", price: 0.015 },
+  sentiment_analysis:   { name: "sentiment-sol", price: 0.005 },
+  smart_contract_audit: { name: "auditor-sol", price: 0.05 },
+  market_analysis:      { name: "market-analyst-sol", price: 0.025 },
+  payment:              { name: "trust-reporter-sol", price: 0.005 },
+};
+
+function inferService(tx: any): string {
+  const logs: string[] = tx?.meta?.logMessages ?? [];
+  const combined = logs.join(" ").toLowerCase();
+  if (combined.includes("audit")) return "smart_contract_audit";
+  if (combined.includes("trust")) return "trust_report";
+  if (combined.includes("sentiment")) return "sentiment_analysis";
+  if (combined.includes("market")) return "market_analysis";
+  if (combined.includes("translate")) return "translate";
+  if (combined.includes("summarize") || combined.includes("summary")) return "summarize";
+  if (combined.includes("sql")) return "sql_generator";
+  if (combined.includes("regex")) return "regex_generator";
+  if (combined.includes("explain")) return "code_explain";
+  if (combined.includes("review")) return "code_review";
+  return "payment";
+}
+
 function parseUsdcAmount(tx: any): number {
   const pre: any[] = tx?.meta?.preTokenBalances ?? [];
   const post: any[] = tx?.meta?.postTokenBalances ?? [];
@@ -81,13 +111,18 @@ export async function GET() {
       const sig = sigs[i];
       if (tx?.meta?.err) continue;
 
-      const amount = parseUsdcAmount(tx);
+      const service = inferService(tx);
+      const mapped = SERVICE_MAP[service] ?? SERVICE_MAP.payment;
+      const parsedAmount = parseUsdcAmount(tx);
+      // Never emit zero: fallback to known service price for demo clarity.
+      const amount = parsedAmount > 0 ? parsedAmount : mapped.price;
       transactions.push({
         id: sig.signature,
-        from: getSender(tx),
-        to: "agent-b",
+        from: "agent-a",
+        to: mapped.name,
         amount,
         chain: "solana-devnet",
+        service,
         txHash: sig.signature.slice(0, 8) + "…" + sig.signature.slice(-4),
         fullTxHash: sig.signature,
         secondsAgo: sig.blockTime ? now - sig.blockTime : 0,

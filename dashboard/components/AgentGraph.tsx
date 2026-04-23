@@ -103,15 +103,17 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
     return [AGENT_A_NODE, ...top6];
   })();
 
-  // Always connect Agent A to every other node in the graph
-  const links: Job[] = nodes.slice(1).map((n, i) => ({
-    id: `edge-${i}`,
-    from: "agent-a",
-    to: n.id,
-    amount: 0.01,
-    chain: n.chain,
-    status: "done" as const,
-  }));
+  // Prefer real transaction edges; fallback to a simple star graph.
+  const links: Job[] = realEdges.length > 0
+    ? realEdges
+    : nodes.slice(1).map((n, i) => ({
+        id: `edge-${i}`,
+        from: "agent-a",
+        to: n.id,
+        amount: 0.005,
+        chain: n.chain,
+        status: "done" as const,
+      }));
 
   // Listen for payment events and trigger edge pulses
   useEffect(() => {
@@ -188,7 +190,11 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
       .data(graphLinks as any)
       .join("line")
       .attr("stroke", "rgba(0,255,136,0.35)")
-      .attr("stroke-width", 1.5)
+      // Thicker edge = more jobs/volume between the same two nodes.
+      .attr("stroke-width", (d: any) => {
+        const jobs = Math.max(1, Math.round((d.amount ?? 0.005) / 0.005));
+        return Math.min(8, 1.2 + jobs * 0.5);
+      })
       .attr("marker-end", "url(#arrow)");
 
     const nodeSel = g.append("g").selectAll("g")
@@ -273,7 +279,7 @@ export function AgentGraph({ agents = [], jobs = [], wsUrl = "ws://localhost:300
     );
 
     return () => { sim.stop(); };
-  }, [agents, jobs]);
+  }, [agents, jobs, realAgents, realEdges, router]);
 
   // Render traveling pulse dots as SVG overlays
   const pulseDots = pulses.map((pulse) => {

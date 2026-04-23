@@ -16,10 +16,58 @@ const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3001";
 // ---------------------------------------------------------------------------
 
 function useLiveStats(wsUrl: string) {
-  const [stats, setStats] = useState({ agents: 20, transactions: 2847, usdc: 142.38 });
+  const [stats, setStats] = useState({ agents: 0, transactions: 0, usdc: 0 });
 
   useEffect(() => {
+    let mounted = true;
     let ws: WebSocket;
+
+    async function refreshStats() {
+      try {
+        // Source of truth for jobs/usdc is Render healthz.
+        const [agentsRes, jobsRes, healthzRes] = await Promise.allSettled([
+          fetch("/api/agents"),
+          fetch("/api/jobs"),
+          fetch("https://agentpay-o5zt.onrender.com/healthz"),
+        ]);
+
+        let agentsOnline = 0;
+        let transactions = 0;
+        let usdc = 0;
+
+        if (agentsRes.status === "fulfilled") {
+          const data = await agentsRes.value.json();
+          const agents = Array.isArray(data?.agents) ? data.agents : [];
+          agentsOnline = agents.filter((a: any) => a?.active !== false).length;
+        }
+
+        if (jobsRes.status === "fulfilled") {
+          const data = await jobsRes.value.json();
+          const jobs = Array.isArray(data?.jobs) ? data.jobs : [];
+          transactions = jobs.length;
+          usdc = jobs.reduce((sum: number, j: any) => sum + Number(j?.amountPaid ?? j?.amount ?? 0), 0);
+        }
+
+        if (healthzRes.status === "fulfilled") {
+          const h = await healthzRes.value.json();
+          transactions = Number(h?.total_jobs ?? transactions);
+          usdc = Number(h?.total_usdc ?? usdc);
+        }
+
+        if (mounted) {
+          setStats({
+            agents: agentsOnline,
+            transactions,
+            usdc: +usdc.toFixed(4),
+          });
+        }
+      } catch {
+        // Keep existing stats on transient failures.
+      }
+    }
+
+    refreshStats();
+
     function connect() {
       try {
         ws = new WebSocket(wsUrl);
@@ -39,11 +87,10 @@ function useLiveStats(wsUrl: string) {
       } catch { setTimeout(connect, 5000); }
     }
     connect();
-    // Auto-increment transactions slowly
-    const id = setInterval(() => {
-      setStats((s) => ({ ...s, transactions: s.transactions + 1 }));
-    }, 14000);
-    return () => { ws?.close(); clearInterval(id); };
+
+    // Refresh from APIs every 30s.
+    const id = setInterval(refreshStats, 30_000);
+    return () => { mounted = false; ws?.close(); clearInterval(id); };
   }, [wsUrl]);
 
   return stats;

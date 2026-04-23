@@ -340,6 +340,18 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
             "smart_contract_audit": "auditor-sol",
             "market_analysis": "market-analyst-sol",
         }
+        payload_map = {
+            "trust_report": lambda i: {"wallet": i},
+            "code_review": lambda i: {"code": i, "language": "python"},
+            "summarize": lambda i: {"text": i, "format": "bullets"},
+            "sql_generator": lambda i: {"description": i, "dialect": "postgres"},
+            "regex_generator": lambda i: {"description": i},
+            "translate": lambda i: {"text": i, "target_language": "Spanish"},
+            "code_explain": lambda i: {"code": i, "language": "python"},
+            "market_analysis": lambda i: {"token": i, "timeframe": "7d"},
+            "sentiment_analysis": lambda i: {"text": i},
+            "smart_contract_audit": lambda i: {"contract": i},
+        }
 
         async def event_stream():
             try:
@@ -355,7 +367,15 @@ def make_app(chain: str, pay_to: str, price_map: dict, port: int) -> FastAPI:
                 yield f"data: {json.dumps({'log': f'[AgentPay] Service: {service} | Input: {input_text[:80]}'})}\n\n"
 
                 from agent_a.main import run_agent_task
-                result = await run_agent_task(f"Generate a {service} for {input_text}")
+                payload_builder = payload_map.get(service, lambda i: {"text": i})
+                payload = payload_builder(input_text)
+                task = (
+                    f"Use service '{service}'. "
+                    f"Call discover_agents(service='{service}'), choose the cheapest agent, "
+                    f"and execute payment with payload_json exactly as this JSON object: {json.dumps(payload)}. "
+                    "Then write reputation and return the final result with tx hash."
+                )
+                result = await run_agent_task(task)
                 payload = {
                     "log": result.get("result", ""),
                     "tx_hash": result.get("tx_hash", ""),
